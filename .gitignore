@@ -1,0 +1,46 @@
+# ---- Large competition data (obtain from the competition zip) ----
+# train.csv (~44MB) and test.csv (~16MB) are intentionally not tracked.
+competition_unzipped/**/input/train.csv
+competition_unzipped/**/input/test.csv
+
+# ---- Corrupt notebook backups ----
+*.broken-bak
+
+# ---- Jupyter ----
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+profile_default/
+ipython_config.py
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ---- Generated ML artifacts ----
+*.parquet
+*.pkl
+*.pickle
+*.joblib
+*.onnx
+*.pt
+*.pth
+features/
+models/
+optuna_studies/
+checkpoints/
+artifacts/
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
