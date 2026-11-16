@@ -229,9 +229,21 @@ Deliverables built:
 - `submissions/submission_anchor_blend_v1.csv` — anchor submission (ready to upload)
 
 Notable: with XGB/CAT at full strength on the new features, HGB earns zero weight — the two
-strongest GBMs dominate. `03_ensemble_training_v2.ipynb` is BUILT and self-selects the recipe
-on OOF, so it adapts if member strengths shift on Colab. Pending verification: XGB seed-averaging
-(running), then finer grid (step 0.02) with the updated member OOFs.
+strongest GBMs dominate. `03_ensemble_training_v2.ipynb` self-selects the recipe on OOF,
+so it adapts if member strengths shift on Colab.
+
+### Colab run 1 (Nov 16, executed notebook verified) — PASSES
+| Member | Local | Colab run | Verdict |
+|---|---|---|---|
+| LGB 3-seed | 0.75989 | 0.75985 | ✓ |
+| XGB 3-seed | 0.76167 | 0.76161 | ✓ (CPU hist; GPU probe failed there, fine) |
+| HGB | 0.75588 | 0.75562 | ✓ |
+| CAT 2-seed | 0.76033 | **0.75847** | ⚠ GPU trap: AUC early-stop not implemented on GPU → stopped on Logloss |
+| Blend | **0.76203** | 0.76174 | ✓ (self-selected LGB .15/XGB .75/CAT .10) |
+
+Colab output: `Drive/GCI Competition/submissions/submission_v2_cv0.76174.csv`
+(test stats mean=0.08990 std=0.08889 — matches local). Notebook's CAT cell now FIXED
+to CPU-only so any re-run reproduces the strong 0.7603 CAT.
 
 ## 9. Standing rules
 

@@ -17,6 +17,7 @@ Solution pipeline for the GCI in-class competition (**due Nov 20, 01:00 UTC**), 
 | **Verified true CV (full 5-fold OOF)** | **0.7587** for the anchor blend |
 | CV → LB calibration | 0.7587 CV → 0.7627 LB (**+0.004**, slightly optimistic but usable) |
 | **Best recipe built (not yet submitted)** | **CV 0.76203** — `submission_v2_recipe_cv0.76203.csv` |
+| **Colab run 1 (Nov 16, executed + verified)** | ✅ **PASSES** — blend CV **0.76174**, self-selected LGB .15 / XGB .75 / CAT .10 |
 | Submission rules | Unlimited submissions, **last file counts**, public LB is a subset of test |
 | Time left | ~4 days (deadline Nov 20) |
 
@@ -36,6 +37,28 @@ Solution pipeline for the GCI in-class competition (**due Nov 20, 01:00 UTC**), 
 > best member (+0.0002). The real gain is that the three GBMs are **97–99% rank-correlated** —
 > they are nearly the same model, so diversity is the binding constraint, not tuning.
 
+### Colab run 1 — local vs. Colab parity (Nov 16, executed notebook, verified)
+
+| Member | Local | Colab run | Verdict |
+|---|---|---|---|
+| LGB 3-seed | 0.75989 | 0.75985 | ✅ |
+| XGB 3-seed | 0.76167 | 0.76161 | ✅ (CPU `hist`; the GPU probe failed on Colab — harmless) |
+| HGB | 0.75588 | 0.75562 | ✅ |
+| CAT 2-seed | 0.76033 | **0.75847** | ⚠️ **GPU trap** — AUC early-stopping is not implemented on CatBoost GPU, so it stopped on Logloss instead |
+| **Blend** | **0.76203** | **0.76174** | ✅ self-selected LGB .15 / XGB .75 / CAT .10 |
+
+The notebook reproduced the local numbers within noise on all members, and the Colab blend
+landed at **CV 0.76174** — a **+0.003 over the anchor's 0.7587**. Colab output:
+`Drive/GCI Competition/submissions/submission_v2_cv0.76174.csv`
+(test stats mean 0.08990, std 0.08889 — matches local).
+
+**The CatBoost cell has been fixed to CPU-only**, so any re-run now reproduces the strong
+0.7603 CAT member instead of the degraded GPU 0.75847. See decision #9 below.
+
+> ⚠️ **Note:** `submission_v2_cv0.76174.csv` lives on Google Drive and has **not** been copied
+> into `submissions/` locally yet, so it is not in this repo. Copy it across to have it
+> version-controlled and side-by-side with the others.
+
 ---
 
 ## 📈 Score Ladder
@@ -44,7 +67,7 @@ Solution pipeline for the GCI in-class competition (**due Nov 20, 01:00 UTC**), 
 |---|---|---|---|
 | Dummy RF (tutorial, 5 features) | ~0.66 | 0.668 | ✅ submitted, superseded |
 | Anchor blend | 0.7587 | **0.7627** | ✅ **submitted and verified** |
-| NB3 v2 recipe | 0.76203 | ~0.757–0.762 | ✅ built, **awaiting upload** |
+| NB3 v2 recipe | 0.76203 local / **0.76174 Colab** | ~0.757–0.762 | ✅ built + **Colab-verified**, awaiting upload |
 | + XGB/CAT seed-averaging, finer grid | 0.762–0.763 | ~0.758–0.763 | ⏳ in progress |
 | Day-3/4 extras (re-tune on GPU, pseudo-labeling) | 0.763–0.766 | ~0.759–0.762 | ⏳ planned |
 
@@ -169,6 +192,27 @@ The five `FLAG_*` columns and the renumbered IDs were confirmed against
 `HomeCredit_columns_description.xlsx` and by direct data inspection: **no hidden columns to
 exploit**. The signal genuinely lives in feature engineering, so that is where the effort goes.
 
+### 9. The GPU is not always faster — and on CatBoost it silently costs accuracy
+
+Colab run 1 surfaced a trap that only appears on real hardware. The CatBoost cell tried GPU
+first with a CPU fallback, and the GPU path **did not error** — it just produced a *worse* model:
+**OOF 0.75847 on GPU vs 0.76033 on CPU** (≈ −0.0019, enough to move the blend).
+
+**Root cause:** CatBoost's GPU backend does not implement AUC-based early stopping, so the model
+silently early-stopped on **Logloss** instead of the intended **AUC** metric. No exception was
+raised, so the "GPU if available, CPU otherwise" pattern looked like it was working.
+
+**Decision:** the CatBoost member is now **hard-pinned to CPU** (`task_type` removed, GPU branch
+deleted) so the strong 0.7603 member is reproducible on every re-run. The general lesson: on this
+dataset, the GPU buys nothing — XGBoost ran on CPU `hist` on Colab anyway, and the one model that
+*did* use the GPU (CatBoost) lost ~0.002 AUC. **Local CPU experiments are the fast path, not the
+slow fallback.**
+
+Also worth recording: the Colab blend self-selected **LGB .15 / XGB .75 / CAT .10**, which differs
+from the local exhaustive-grid recipe (**LGB .06 / XGB .64 / CAT .30**) because the Colab CAT member
+was the degraded GPU one. That is precisely why the CAT cell had to be fixed before any further
+Colab runs — otherwise the recipe selection would have been fitted to a broken member.
+
 ---
 
 ## 🗂 Files & Notebooks
@@ -178,7 +222,7 @@ exploit**. The signal genuinely lives in feature engineering, so that is where t
 | `01_feature_engineering.ipynb` | Feature engineering + adversarial validation, saves parquet | ✅ working (cell 12 syntax error fixed) |
 | `02_optuna_tuning.ipynb` | 50 trials × 3 models | ⚠️ **stale** — tuned without TE; re-tune scheduled Nov 17 |
 | `03_ensemble_training.ipynb` | Original 5-fold ensemble + stacking + SHAP | ⚠️ superseded by v2 (contains bugs 1–3) |
-| **`03_ensemble_training_v2.ipynb`** | **Evidence-based rebuild.** Seed-averaged members, 4th member HGB, OOF hill-climb + 4-way grid, self-selecting recipe | ✅ **primary pipeline** |
+| **`03_ensemble_training_v2.ipynb`** | **Evidence-based rebuild.** Seed-averaged members, 4th member HGB, OOF hill-climb + 4-way grid, self-selecting recipe | ✅ **primary pipeline** — executed on Colab Nov 16, blend CV **0.76174**. CAT member now pinned to CPU (GPU trap, see decision #9) |
 | **`gci_honors_reproduction.ipynb`** | **Self-contained end-to-end reproduction** → `submission.csv` → zip for Honors | ✅ **submission artifact** |
 | `04_final_submission.ipynb` | Legacy finalizer | ⛔ **DO NOT RUN** — loads the buggy squashed `final_full_preds.npy` |
 | `MASTER_PLAN.md` | Full experiment log, benchmarks, day-by-day plan | ✅ source of truth |
@@ -186,6 +230,7 @@ exploit**. The signal genuinely lives in feature engineering, so that is where t
 | `QUICKSTART.md` | Colab T4 runbook (Drive layout, keepalive, troubleshooting) | ✅ |
 | `submissions/submission_anchor_blend_v1.csv` | Anchor submission — **LB 0.7627** | ✅ uploaded |
 | `submissions/submission_v2_recipe_cv0.76203.csv` | Best recipe — **CV 0.76203** | ⏳ **upload next** |
+| `submissions/submission_v2_cv0.76174.csv` | Colab run 1 output — **CV 0.76174** | ⏳ on Google Drive, **not yet copied here** |
 
 ### Engineered features (on Drive)
 
@@ -200,7 +245,7 @@ Original OOF/test predictions: `models/{lgb,xgb,cat}_test_preds.npy`.
 | Day | Focus | Status |
 |---|---|---|
 | **Nov 15** | Audit, bug fixes, anchor submission, NB3 v2 + honors notebook built, FE Round 2 validated locally | ✅ done |
-| **Nov 16** | Run NB3 v2 on Colab T4 (~2–3 h); FE Round 2 on CPU | 🔄 in progress |
+| **Nov 16** | Run NB3 v2 on Colab T4 (~2–3 h); FE Round 2 on CPU | ✅ **Colab run 1 done** — blend CV 0.76174, CAT GPU trap found + fixed |
 | **Nov 17** | Re-tune Optuna on new feature set (5-fold OOF objective, same TE as NB3); full NB3 v2 re-run | ⏳ |
 | **Nov 18** | Squeeze: hill-climb over all saved OOF pred sets; pseudo-labeling on p>0.9 / p<0.02 if stable | ⏳ |
 | **Nov 19** | Final submission (CV decides), polish + zip honors notebook, submit early evening — scoring can lag | ⏳ |
