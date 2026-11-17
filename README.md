@@ -3,7 +3,7 @@
 Solution pipeline for the GCI in-class competition (**due Nov 20, 01:00 UTC**), based on the
 [HomeCredit Default Risk](https://www.kaggle.com/competitions/home-credit-default-risk) dataset.
 
-**Metric:** ROC AUC · **Data:** 171,202 train rows × 101 engineered features, 61,500 test rows
+**Metric:** ROC AUC · **Data:** 171,202 train rows × 98 engineered features (E2 set), 61,500 test rows
 **Compute:** Google Colab Free (T4 GPU) + local Ryzen 7 5800U (8c/16t) for CPU experiments
 
 ---
@@ -19,7 +19,44 @@ Solution pipeline for the GCI in-class competition (**due Nov 20, 01:00 UTC**), 
 | **Best recipe built (not yet submitted)** | **CV 0.76203** — `submission_v2_recipe_cv0.76203.csv` |
 | **Colab run 1 (Nov 16, executed + verified)** | ✅ **PASSES** — blend CV **0.76174**, self-selected LGB .15 / XGB .75 / CAT .10 |
 | Submission rules | Unlimited submissions, **last file counts**, public LB is a subset of test |
-| Time left | ~4 days (deadline Nov 20) |
+| Time left | ~3 days (deadline Nov 20) |
+
+### 🔄 Current step — local hyperparameter tuning on all 3 ensemble members
+
+**Status: IN PROGRESS (Nov 17).** Hyperparameter tuning is being run **locally on the CPU**
+on all three members of the ensemble — **LightGBM, XGBoost and CatBoost** — against the final
+98-column E2 feature set. This is a follow-up to the earlier re-tune, which only covered two
+of the three members.
+
+| Member | Local tuning status | Verified reference |
+|---|---|---|
+| **LightGBM** | ✅ Re-tuned overnight on E2 (40 Optuna trials) | 0.75989 → **0.76120** single-seed; 3-seed build **0.76155** |
+| **XGBoost** | ✅ Re-tuned overnight on E2 (26 Optuna trials) | 0.76137 → **0.76192** single-seed; 3-seed build **0.76171** |
+| **CatBoost** | 🔄 Being tuned locally now (previously skipped as too slow) | baseline CAT2 = **0.76028**, depth-3 params hardcoded in the pipeline |
+
+**Protocol (identical for all three members):**
+
+1. **Same folds everywhere** — 5-fold `StratifiedKFold`, `random_state=42`, on the full
+   171,202 rows. No 10% holdout carve-out (that was worth +0.0028 on its own).
+2. **Target encoding inside each fold only** — no leakage from validation rows into training.
+3. **Objective = full OOF AUC of the 3-seed-averaged member**, never the 10% holdout. Selection
+   noise on 6.1k rows was what produced the fake 0.76502 earlier.
+4. **Shallow trees only** (depth 3–4). The verified A/B/C benchmark showed leaves=63/127 lose
+   to the tuned depth-3/4 trees, so the search space is deliberately narrow.
+5. **CPU-only, fixed seeds (42 / 1337 / 2026)**, every trial written to an experiment log. The
+   GPU buys nothing here: on 171k × 98 the models train in minutes, and the one GPU run
+   (CatBoost) silently early-stopped on Logloss instead of AUC, costing ~0.0019 AUC.
+6. **Acceptance gate:** a new parameter set only replaces the pinned one if the rebuilt
+   member improves full OOF AUC by **≥ 0.0003** *and* the blend weights are re-validated on the
+   new OOFs. No blind substitution into the submission path.
+
+**Why this matters:** all three GBMs are 97–99.8% rank-correlated, so the blend is saturated —
+the last verified progression was 0.7587 (anchor) → 0.76203 (v2) → 0.76224 (v3). Tuning the
+third member is the last cheap lever before the neural-net diversity seat; it is expected to
+move CV by roughly +0.000–0.0015, not more.
+
+**Next after tuning completes:** rebuild per-seed OOF/test predictions → re-run the hill-climb
+and weight grid on the new OOFs → re-verify the blend → only then consider a final submission.
 
 ### Verified model results (5-fold Stratified OOF, full 171,202 rows)
 
