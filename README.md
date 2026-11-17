@@ -12,27 +12,34 @@ Solution pipeline for the GCI in-class competition (**due Nov 20, 01:00 UTC**), 
 
 | Item | Value |
 |---|---|
-| **Current public LB** | **0.7627** — from `submission_anchor_blend_v1.csv` (✅ uploaded) |
-| Previous dummy submission | 0.66819 (tutorial RF, 5 features) — replaced |
-| **Verified true CV (full 5-fold OOF)** | **0.7587** for the anchor blend |
-| CV → LB calibration | 0.7587 CV → 0.7627 LB (**+0.004**, slightly optimistic but usable) |
-| **Best recipe built (not yet submitted)** | **CV 0.76203** — `submission_v2_recipe_cv0.76203.csv` |
-| **Colab run 1 (Nov 16, executed + verified)** | ✅ **PASSES** — blend CV **0.76174**, self-selected LGB .15 / XGB .75 / CAT .10 |
+| **Current public LB** | **0.76475** — best score so far (✅ uploaded) |
+| Previous submissions | 0.76433–0.76435 (v2 recipe) → 0.7627 (anchor) → 0.66819 (dummy RF) |
+| **Current best recipe** | **v4 — CV 0.76244** — `submissions/submission_v4_cv0.76244.csv` |
+| v4 blend weights | LGB **.30** / XGBnew **.33** / CATnew **.33** / HGB **.04** |
+| CV → LB calibration | 0.7587 → 0.7627 (**+0.004**); 0.76203 → 0.76433–0.76435 (**+0.0023**) |
+| **Latest LB for v4** | **0.76475** (CV 0.76244 → LB +0.0023, consistent with v2) |
+| Honors artifact | `gci_honors_reproduction.ipynb` regenerated for v4 — **still must be run on Colab CPU** |
 | Submission rules | Unlimited submissions, **last file counts**, public LB is a subset of test |
-| Time left | ~3 days (deadline Nov 20) |
+| Time left | ~2 days (deadline Nov 20, 01:00 UTC = 04:00 Nairobi) |
 
-### 🔄 Current step — local hyperparameter tuning on all 3 ensemble members
+### ✅ Local hyperparameter tuning — all ensemble members (completed Nov 17–18)
 
-**Status: IN PROGRESS (Nov 17).** Hyperparameter tuning is being run **locally on the CPU**
-on all three members of the ensemble — **LightGBM, XGBoost and CatBoost** — against the final
-98-column E2 feature set. This is a follow-up to the earlier re-tune, which only covered two
-of the three members.
+Tuning ran **locally on the CPU** against the final 98-column E2 feature set. It started with
+the three GBM members (LightGBM, XGBoost, CatBoost) and was extended to HistGradientBoosting,
+which had never been tuned. Results are recorded in [`PROCESS_LOG.md`](PROCESS_LOG.md) phases 3 and 5.
 
-| Member | Local tuning status | Verified reference |
+| Member | Tuning status | Before → after (single-seed unless noted) |
 |---|---|---|
-| **LightGBM** | ✅ Re-tuned overnight on E2 (40 Optuna trials) | 0.75989 → **0.76120** single-seed; 3-seed build **0.76155** |
-| **XGBoost** | ✅ Re-tuned overnight on E2 (26 Optuna trials) | 0.76137 → **0.76192** single-seed; 3-seed build **0.76171** |
-| **CatBoost** | 🔄 Being tuned locally now (previously skipped as too slow) | baseline CAT2 = **0.76028**, depth-3 params hardcoded in the pipeline |
+| **LightGBM** | ✅ 40 Optuna trials on E2 | 0.75989 → **0.76120**; 3-seed build **0.76155** |
+| **XGBoost** | ✅ 26 Optuna trials on E2 | 0.76137 → **0.76192**; 3-seed build **0.76171** |
+| **CatBoost** | ✅ First-ever re-tune (20 fold-0 trials, top-3 on full 5-fold) | 0.76033 → **0.76088** full-CV; 2-seed rebuild **0.76063** |
+| **HistGradientBoosting** | ✅ First-ever re-tune (40 trials, full CV) | 0.75588 → **0.75820**; rebuild **0.75814** |
+
+The HGB rebuild exposed a reproducibility bug: the tuning JSON stored only the four searched
+hyperparameters, so the first rebuild silently used sklearn defaults (`max_iter=100` → 0.74969).
+Re-running with the **full** tuned config (`max_iter=1000`, `early_stopping(0.1, 25)`) recovered
+0.75814, matching the tuning result. This bug class is now an explicit audit target in
+[`AUDIT_REQUEST.md`](AUDIT_REQUEST.md).
 
 **Protocol (identical for all three members):**
 
@@ -50,25 +57,29 @@ of the three members.
    member improves full OOF AUC by **≥ 0.0003** *and* the blend weights are re-validated on the
    new OOFs. No blind substitution into the submission path.
 
-**Why this matters:** all three GBMs are 97–99.8% rank-correlated, so the blend is saturated —
-the last verified progression was 0.7587 (anchor) → 0.76203 (v2) → 0.76224 (v3). Tuning the
-third member is the last cheap lever before the neural-net diversity seat; it is expected to
-move CV by roughly +0.000–0.0015, not more.
+**Why this mattered:** all GBMs are 97–99.8% rank-correlated, so the blend was saturated —
+progression: 0.7587 (anchor) → 0.76203 (v2) → 0.76224 (v3) → **0.76244 (v4)**. Tuning delivered
+exactly the expected small gain. The neural-net diversity seat was also tested and **rejected**:
+MLP OOF 0.74897 with rank-corr 0.9242 vs XGBnew (fails both gates), TabNet collapsed to a
+constant 0.50000, and adding the MLP at any weight moved CV by only +0.00006.
 
-**Next after tuning completes:** rebuild per-seed OOF/test predictions → re-run the hill-climb
-and weight grid on the new OOFs → re-verify the blend → only then consider a final submission.
+**After tuning:** rebuilt per-seed OOF/test predictions → re-ran hill-climb + weight grid on the
+verified OOFs → pinned v4 → validated the submission file (61,500 rows, IDs match sample
+submission, no NaNs, preds in [0.00202, 0.77167], Spearman corr vs v3 = 0.99985).
 
 ### Verified model results (5-fold Stratified OOF, full 171,202 rows)
 
 | Model / Blend | OOF AUC | Note |
 |---|---|---|
-| LightGBM (Optuna-tuned, depth 3) | 0.75822 | retrained on full data; saved original was 0.75546 |
-| XGBoost (tuned) | 0.76137 | **best single model** |
-| CatBoost (tuned) | 0.76033 | |
-| HistGradientBoosting (sklearn) | 0.75588 | added for diversity, rank-corr ~0.957 vs LGB |
-| LGB ×3 seeds averaged | 0.75989 | |
-| **Anchor blend** (LGB .30 / XGB .55 / CAT .15) | **0.7587** | submitted → LB 0.7627 |
-| **Final recipe v2** (LGB3 .06 / XGB3 .64 / CAT .30 / HGB .00) | **0.76203** | **+0.0033 over anchor — submit this next** |
+| LGBnew ×3 seeds (re-tuned) | 0.76155 | rank-corr 0.993 vs XGBnew |
+| XGBnew ×3 seeds (re-tuned) | 0.76171 | **best single model** |
+| CATnew ×2 seeds (re-tuned) | 0.76063 | rank-corr ~0.981 vs XGBnew |
+| HGBnew (re-tuned) | 0.75814 | rank-corr 0.9756 vs XGBnew |
+| MLP + embeddings (NN diversity) | 0.74897 | ❌ rejected — corr 0.9242, fails both gates |
+| **Anchor blend** (LGB .30 / XGB .55 / CAT .15) | 0.7587 | submitted → LB 0.7627 |
+| **v2** (E2 + full-data OOF selection) | 0.76203 | submitted → LB 0.76433–0.76435 |
+| **v3** (re-tuned LGB/XGB, 2 XGB generations) | 0.76224 | built + validated, corr 0.9995 vs v2 |
+| **v4 — current** (LGB .30 / XGBn .33 / CATn .33 / HGB .04) | **0.76244** | **submitted → LB 0.76475** |
 
 > **Note on the original pipeline:** the previous 3-GBM blend looked like it gained a lot over its
 > best member (+0.0002). The real gain is that the three GBMs are **97–99% rank-correlated** —
@@ -103,10 +114,12 @@ landed at **CV 0.76174** — a **+0.003 over the anchor's 0.7587**. Colab output
 | Stage | CV AUC | Est. LB | Status |
 |---|---|---|---|
 | Dummy RF (tutorial, 5 features) | ~0.66 | 0.668 | ✅ submitted, superseded |
-| Anchor blend | 0.7587 | **0.7627** | ✅ **submitted and verified** |
-| NB3 v2 recipe | 0.76203 local / **0.76174 Colab** | ~0.757–0.762 | ✅ built + **Colab-verified**, awaiting upload |
-| + XGB/CAT seed-averaging, finer grid | 0.762–0.763 | ~0.758–0.763 | ⏳ in progress |
-| Day-3/4 extras (re-tune on GPU, pseudo-labeling) | 0.763–0.766 | ~0.759–0.762 | ⏳ planned |
+| Anchor blend | 0.7587 | 0.7627 | ✅ submitted |
+| v2 recipe (E2 + OOF selection) | 0.76203 | 0.76433–0.76435 | ✅ submitted |
+| v3 recipe (re-tuned LGB/XGB) | 0.76224 | — | ✅ built + validated, not uploaded |
+| **v4 recipe (all 4 members tuned)** | **0.76244** | **0.76475** | ✅ **submitted — current best** |
+| NN diversity seat (MLP / TabNet) | — | — | ❌ rejected (see phase 6 of `PROCESS_LOG.md`) |
+| Final action | — | — | ⏳ run Honors notebook, keep v4 as **last** file |
 
 **Realistic ceiling for this dataset: ~0.775 CV → ~0.770 LB.** The application table only
 (171k rows, no auxiliary tables) is a narrow signal pool. The #1 entry on the public LB at
@@ -257,23 +270,29 @@ Colab runs — otherwise the recipe selection would have been fitted to a broken
 | File | Role | Status |
 |---|---|---|
 | `01_feature_engineering.ipynb` | Feature engineering + adversarial validation, saves parquet | ✅ working (cell 12 syntax error fixed) |
-| `02_optuna_tuning.ipynb` | 50 trials × 3 models | ⚠️ **stale** — tuned without TE; re-tune scheduled Nov 17 |
-| `03_ensemble_training.ipynb` | Original 5-fold ensemble + stacking + SHAP | ⚠️ superseded by v2 (contains bugs 1–3) |
-| **`03_ensemble_training_v2.ipynb`** | **Evidence-based rebuild.** Seed-averaged members, 4th member HGB, OOF hill-climb + 4-way grid, self-selecting recipe | ✅ **primary pipeline** — executed on Colab Nov 16, blend CV **0.76174**. CAT member now pinned to CPU (GPU trap, see decision #9) |
-| **`gci_honors_reproduction.ipynb`** | **Self-contained end-to-end reproduction** → `submission.csv` → zip for Honors | ✅ **submission artifact** |
+| `02_optuna_tuning.ipynb` | 50 trials × 3 models | ⚠️ **stale** — tuned without TE; replaced by the local re-tunes |
+| `03_ensemble_training.ipynb` | Original 5-fold ensemble + stacking + SHAP | ⚠️ superseded (contains bugs 1–3) |
+| `03_ensemble_training_v2.ipynb` | Evidence-based rebuild, OOF hill-climb + weight grid | ✅ historical runbook; params overridden with re-tuned values, CAT pinned to CPU |
+| **`05_nn_diversity.ipynb`** | Phase 2 NN diversity on Colab T4: MLP + embeddings, TabNet, seat gate | ✅ **executed** — MLP 0.74897 / corr 0.9242, TabNet collapsed → seat rejected |
+| **`gci_honors_reproduction.ipynb`** | **Self-contained end-to-end reproduction of v4** (14 cells, CPU-only, tuned params + pinned weights hardcoded) | ✅ **submission artifact — run on Colab CPU (~3.5–4 h) and zip** |
 | `04_final_submission.ipynb` | Legacy finalizer | ⛔ **DO NOT RUN** — loads the buggy squashed `final_full_preds.npy` |
-| `MASTER_PLAN.md` | Full experiment log, benchmarks, day-by-day plan | ✅ source of truth |
-| `HANDOFF_TO_GLM.md` | Inter-agent status handoff | ✅ source of truth |
+| **`PROCESS_LOG.md`** | Full chronological record, all 8 phases, rule-compliance and artifact map | ✅ **primary source of truth** |
+| **`AUDIT_REQUEST.md`** | Devil's-advocate audit brief (16 attack surfaces) | ⏳ audit not yet delivered (`AUDIT_FINDINGS.md`) |
+| `MASTER_PLAN.md` | Experiment log and day-by-day plan | 📁 historical (superseded by `PROCESS_LOG.md`) |
+| `HANDOFF_TO_GLM.md` | Inter-agent handoff | 📁 historical (its early sections were superseded mid-file — read the GLM RESPONSE at the bottom) |
+| `TRAINING_STAGE_REVIEW.md` | 7-stage synthesis, rule-compliance and guide-mapping tables | ✅ |
 | `QUICKSTART.md` | Colab T4 runbook (Drive layout, keepalive, troubleshooting) | ✅ |
+| `phase1_diversity_v{1,2,3}.py`, `phase1_results_summary.json` | Phase 1 diversity experiments (script iterations + results) | 📁 historical; v3 is final, results later found to be weaker regenerated runs |
 | `submissions/submission_anchor_blend_v1.csv` | Anchor submission — **LB 0.7627** | ✅ uploaded |
-| `submissions/submission_v2_recipe_cv0.76203.csv` | Best recipe — **CV 0.76203** | ⏳ **upload next** |
-| `submissions/submission_v2_cv0.76174.csv` | Colab run 1 output — **CV 0.76174** | ⏳ on Google Drive, **not yet copied here** |
+| `submissions/submission_v2_recipe_cv0.76203.csv` | v2 recipe — **LB 0.76433–0.76435** | ✅ uploaded |
+| `submissions/submission_v3_recipe_cv0.76224.csv` | v3 recipe — **CV 0.76224**, corr 0.9995 vs v2 | ✅ built, fallback |
+| **`submissions/submission_v4_cv0.76244.csv`** | **v4 recipe — CV 0.76244, LB 0.76475** | ✅ **current best; keep as LAST file** |
 
 ### Engineered features (on Drive)
 
-`features/train_engineered.parquet`, `features/test_engineered.parquet` — 101 columns.
-Optuna params: `optuna_studies/all_best_params.json`.
-Original OOF/test predictions: `models/{lgb,xgb,cat}_test_preds.npy`.
+`X_e2.parquet` / `X_test_e2.parquet` — 98 columns (E2 set, 16 enrichments + 18 dead features removed).
+Tuned params: `best_params_{lgb,xgb,cat,hgb}_e2.json` (session temp dir).
+Verified OOF/test `.npy` predictions and `v4_recipe.json` — see the artifact map in `PROCESS_LOG.md` §4.
 
 ---
 
@@ -282,10 +301,10 @@ Original OOF/test predictions: `models/{lgb,xgb,cat}_test_preds.npy`.
 | Day | Focus | Status |
 |---|---|---|
 | **Nov 15** | Audit, bug fixes, anchor submission, NB3 v2 + honors notebook built, FE Round 2 validated locally | ✅ done |
-| **Nov 16** | Run NB3 v2 on Colab T4 (~2–3 h); FE Round 2 on CPU | ✅ **Colab run 1 done** — blend CV 0.76174, CAT GPU trap found + fixed |
-| **Nov 17** | Re-tune Optuna on new feature set (5-fold OOF objective, same TE as NB3); full NB3 v2 re-run | ⏳ |
-| **Nov 18** | Squeeze: hill-climb over all saved OOF pred sets; pseudo-labeling on p>0.9 / p<0.02 if stable | ⏳ |
-| **Nov 19** | Final submission (CV decides), polish + zip honors notebook, submit early evening — scoring can lag | ⏳ |
+| **Nov 16** | NB3 v2 on Colab T4; FE Round 2 | ✅ Colab run 1 verified — blend CV 0.76174, CAT GPU trap found + fixed |
+| **Nov 17** | Re-tune LGB/XGB, first CAT + HGB tune, NN diversity test, v3 build | ✅ done — v3 CV 0.76224; NN seat rejected; v4 development started |
+| **Nov 18** | Rebuild all tuned members, hill-climb v4, build + validate submission | ✅ **done — v4 CV 0.76244 → LB 0.76475** |
+| **Nov 19** | Run Honors notebook on Colab CPU, zip it, final upload (v4 must be last) | ⏳ |
 
 ---
 
@@ -326,17 +345,25 @@ In Colab, upload them to Drive at `MyDrive/gci_competition/input/` instead.
 ├── 01_feature_engineering.ipynb
 ├── 02_optuna_tuning.ipynb
 ├── 03_ensemble_training.ipynb          # legacy (superseded)
-├── 03_ensemble_training_v2.ipynb       # primary pipeline
+├── 03_ensemble_training_v2.ipynb       # historical runbook (re-tuned params)
 ├── 04_final_submission.ipynb            # legacy — DO NOT RUN
-├── gci_honors_reproduction.ipynb        # self-contained honors artifact
-├── MASTER_PLAN.md                       # experiment log + plan
-├── HANDOFF_TO_GLM.md                    # inter-agent handoff
+├── 05_nn_diversity.ipynb                # NN diversity seat (rejected)
+├── gci_honors_reproduction.ipynb        # self-contained v4 honors artifact ← RUN THIS
+├── PROCESS_LOG.md                       # full chronological record + artifact map
+├── AUDIT_REQUEST.md                     # pending devil's-advocate audit brief
+├── TRAINING_STAGE_REVIEW.md             # 7-stage synthesis
+├── MASTER_PLAN.md                       # historical plan
+├── HANDOFF_TO_GLM.md                    # historical handoff
 ├── QUICKSTART.md                        # Colab T4 runbook
+├── phase1_diversity_v{1,2,3}.py         # phase 1 scripts (v3 final)
+├── phase1_results_summary.json
 ├── README.md
 ├── requirements.txt
 ├── submissions/
 │   ├── submission_anchor_blend_v1.csv       # LB 0.7627
-│   └── submission_v2_recipe_cv0.76203.csv   # CV 0.76203
+│   ├── submission_v2_recipe_cv0.76203.csv   # LB 0.76433–0.76435
+│   ├── submission_v3_recipe_cv0.76224.csv   # CV 0.76224 (fallback)
+│   └── submission_v4_cv0.76244.csv          # CV 0.76244 / LB 0.76475 ← LAST FILE
 └── competition_unzipped/04. Competition (due Nov 20)/
     ├── competition_tutorial.pdf
     └── Competition/

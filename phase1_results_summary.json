@@ -1,0 +1,26 @@
+{
+  "summary": "Phase 1 Diversity Experiments - Partial Results (Core 4 GBMs + Diversity Models)",
+  "core_4_gbms": {
+    "LGB3": 0.75978,
+    "XGB": 0.76068,
+    "CAT": 0.75944,
+    "HGB": 0.75588
+  },
+  "diversity_models": {
+    "LogReg": 0.74228,
+    "ExtraTrees": 0.73204,
+    "RandomForest": 0.73607
+  },
+  "feature_subspace": {
+    "Subspace0": 0.75820,
+    "Subspace1": 0.75936
+  },
+  "analysis": {
+    "best_single": "XGB at 0.76068",
+    "core4_avg": 0.75895,
+    "key_finding": "All diversity models (LogReg 0.742, ExtraTrees 0.732, RF 0.736) are TOO WEAK solo to help - they dilute blends despite lower correlation",
+    "rank_correlation_estimate": "LogReg ~0.90, ExtraTrees ~0.88, RF ~0.89 vs XGB (based on MASTER_PLAN benchmarks)",
+    "feature_subspace": "Subspace LGBMs (0.758-0.759) are weaker than full LGB3 (0.7598) - not worth it"
+  },
+  "conclusion": "No diversity model from this batch earns a seat in the ensemble. Need stronger diversity candidates: Neural Networks (TabNet, MLP+Embeddings) or proper stacking with inner CV."
+}

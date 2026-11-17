@@ -1,5 +1,9 @@
 # MASTER PLAN — GCI Home Credit Competition (ends Nov 20, 1:00 AM UTC)
 
+> ⚠️ **SUPERSEDED — see [`PROCESS_LOG.md`](PROCESS_LOG.md) for the final record.** The v3 recipe
+> below was superseded by **v4 (LGB .30 / XGBn .33 / CATn .33 / HGB .04, CV 0.76244, LB 0.76475)**
+> after CatBoost and HGB were tuned and the NN diversity seat was rejected. Kept as the benchmark log.
+
 ## 0. Where we are (facts) — updated after full Drive audit
 
 | Item | Value |
@@ -217,16 +221,20 @@ LogReg meta over 4 = 0.75604 — flat stacking dilutes. | | |
 | **XGB tuned (full data)** | **0.76137 — best single model** |
 | CAT tuned (full data) | 0.76033 |
 
-**DEFINITIVE FINAL RECIPE (verified locally, full 171k, all pairs/triples exhaustive at 0.01):**
-**LGB3 0.06 + XGB3 0.64 + CAT 0.30 + HGB 0.00 → CV 0.76203**
-(vs old pipeline's true 0.7587 → **+0.0033 verified**; stable across search resolutions
-— coarse grid 0.76194, hill-climb 0.76186, fine grid ~0.762)
+**DEFINITIVE FINAL RECIPE — v3 (Nov 17, after overnight Optuna re-tune on E2 features):**
+Members: LGBnew3 (re-tuned, 0.76155) + XGBnew3 (re-tuned, 0.76171) + XGBold3 (0.76167, 4% seat)
++ CAT2 (0.76028) → weights **LGB .355 / XGBold .04 / XGBnew .355 / CAT .25** → **CV 0.76224**
+LGBold/HGB dropped (0 weight). Progression: v1 0.7587 → v2 0.76203 → **v3 0.76224**.
 
+Overnight re-tune verified: LGB 0.75989→0.76120 single-seed (params were stale, tuned on old
+features); XGB 0.76137→0.76192 single-seed; CAT re-tune skipped (slow, params still fine).
 Deliverables built:
-- `03_ensemble_training_v2.ipynb` — Colab runbook, self-selects the recipe on OOF
-- `gci_honors_reproduction.ipynb` — self-contained: raw CSVs → FE → 4 members (hardcoded
-  tuned params, seeds: LGB×3, XGB×3, CAT×2) → OOF grid → submission.csv → zip for Honors
-- `submissions/submission_anchor_blend_v1.csv` — anchor submission (ready to upload)
+- `submissions/submission_v3_recipe_cv0.76224.csv` — validated (corr 0.9995 with v2)
+- `gci_honors_reproduction.ipynb` — regenerated to reproduce the EXACT v3 recipe:
+  LGBnew×3, XGBold×3 + XGBnew×3 (both generations), CAT×2 CPU-only, pinned weights
+  [0.355/0.04/0.355/0.25], ~3.5–4 h Colab CPU, no GPU needed anywhere
+- `03_ensemble_training_v2.ipynb` — params overridden with re-tuned values, reference
+  numbers updated, CAT already CPU-forced
 
 Notable: with XGB/CAT at full strength on the new features, HGB earns zero weight — the two
 strongest GBMs dominate. `03_ensemble_training_v2.ipynb` self-selects the recipe on OOF,
