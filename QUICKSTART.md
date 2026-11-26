@@ -1,116 +1,144 @@
-# GCI Competition - Quick Start Guide for Colab T4
+# Final-day runbook — Honors notebook + last submission
 
-## 🚀 Tomorrow Morning Checklist
+**Deadline:** 2026-11-20 **01:00 UTC** = **04:00 EAT**. Scoring can lag; do not cut it close.
+**Current best:** v4 — CV **0.76244**, public LB **0.76475**.
+**Goal of this runbook:** produce the Honors code artifact and leave **v4 as the last uploaded file**.
 
-### 1. Open Colab & Setup (5 min)
-```bash
-# In Colab notebook 1 (01_feature_engineering.ipynb):
-# Runtime → Change runtime type → GPU (T4)
-# Run first 3 cells: imports, Drive mount, load data
-```
-
-### 2. Upload Files to Google Drive (Before Colab)
-Create this folder structure in your Google Drive:
-```
-MyDrive/
-└── gci_competition/
-    ├── input/
-    │   ├── train.csv
-    │   ├── test.csv
-    │   └── sample_submission.csv
-    ├── features/          (auto-created)
-    ├── models/            (auto-created)
-    ├── optuna_studies/    (auto-created)
-    └── submissions/       (auto-created)
-```
-
-**Upload the 3 CSV files from the competition zip to `MyDrive/gci_competition/input/`**
-
-### 3. Execution Order (Estimated Times on T4)
-
-| Notebook | Time | Description |
-|----------|------|-------------|
-| `01_feature_engineering.ipynb` | ~15 min | Feature engineering, adversarial validation, save parquet |
-| `02_optuna_tuning.ipynb` | ~2-3 hours | 50 trials × 3 models (LightGBM, XGBoost, CatBoost) |
-| `03_ensemble_training.ipynb` | ~1-2 hours | 5-fold CV for each model, stacking, SHAP |
-| `04_final_submission.ipynb` | ~10 min | Create submission, competition notebook, zip |
-
-**Total: ~4-5.5 hours** (fits in one 12-hour Colab session)
-
-### 4. Colab Pro Tips
-
-#### Keep Session Alive
-```javascript
-// Paste in browser console (F12) to prevent 90-min timeout:
-setInterval(() => document.querySelector('#connect-button').click(), 60000);
-```
-
-#### Save Progress Frequently
-- Notebooks auto-save to Drive every few minutes
-- Manually save: `Ctrl+S` or File → Save
-- Copy critical outputs to Drive with `shutil.copy2()`
-
-#### If Session Crashes
-1. Reconnect to runtime
-2. Re-run Drive mount cell
-3. Continue from last completed notebook
-4. All parquet/pickle files persist on Drive
-
-#### GPU Memory Issues
-```python
-# If OOM, reduce batch size in Optuna:
-'num_leaves': trial.suggest_int('num_leaves', 16, 128),  # Lower max
-'max_depth': trial.suggest_int('max_depth', 3, 8),       # Lower max
-```
-
-### 5. Expected Scores (Targets)
-
-| Model | 5-Fold CV AUC Target |
-|-------|---------------------|
-| LightGBM | > 0.79 |
-| XGBoost | > 0.79 |
-| CatBoost | > 0.79 |
-| **Ensemble** | **> 0.80** |
-
-### 6. Key Files to Submit
-
-1. **`submission_final.csv`** - Your predictions (upload to competition platform)
-2. **`improved_lgbm_pipeline_v2.ipynb`** - Competition notebook
-3. **`improved_lgbm_pipeline_v2.zip`** - Zipped notebook for honors award
-
-### 7. Troubleshooting
-
-| Issue | Fix |
-|-------|-----|
-| `ModuleNotFoundError` | Run `!pip install -r requirements.txt` in first cell |
-| Drive mount fails | Re-run mount cell, allow permissions |
-| Optuna too slow | Reduce trials to 30, use 2-fold CV |
-| GPU not detected | Runtime → Change runtime type → GPU (T4) |
-| OOM error | Restart runtime, reduce `num_leaves`/`max_depth` |
-| 90-min timeout | Use console script above, keep tab active |
-
-### 8. Tomorrow's First Steps
-
-1. **Open Colab**: https://colab.research.google.com/
-2. **Upload**: `01_feature_engineering.ipynb` → File → Upload notebook
-3. **GPU**: Runtime → Change runtime type → T4 GPU
-4. **Drive**: Run mount cell, authorize
-5. **Data**: Verify CSV files in `MyDrive/gci_competition/input/`
-6. **Run**: Execute cells top to bottom
-
-### 9. Parallel Work (While Optuna Runs)
-
-Since Optuna takes 2-3 hours, you can:
-- Open second Colab tab for research/experimentation
-- Test pseudo-labeling ideas
-- Analyze SHAP values from previous runs
-- Prepare competition writeup
+> Do **not** run `03_ensemble_training.ipynb` (historical bugs) or `04_final_submission.ipynb`
+> (loads the squashed `final_full_preds.npy`). The only notebook you need now is
+> `gci_honors_reproduction.ipynb`.
 
 ---
 
-## 📞 Need Help?
-- Check Colab logs for errors
-- All intermediate results saved to Drive
-- Can resume from any notebook
+## 0. What you need
 
-**Good luck! 🏆**
+| Thing | Where |
+|---|---|
+| Competition CSVs | `train.csv`, `test.csv`, `sample_submission.csv` |
+| Drive layout | `MyDrive/gci_competition/input/{train,test,sample_submission}.csv` |
+| Notebook | `gci_honors_reproduction.ipynb` (this repo) |
+| Runtime | Colab **CPU** — no GPU needed anywhere |
+| Time | ~3.5–4 h on a 2-vCPU Colab CPU runtime |
+| Final prediction file | `submissions/submission_v4_cv0.76244.csv` (already uploaded) |
+
+The notebook also accepts the old path `MyDrive/competition/input/` as a fallback.
+
+---
+
+## 1. Upload the data (5 min)
+
+In Google Drive, create:
+
+```
+MyDrive/gci_competition/
+└── input/
+    ├── train.csv
+    ├── test.csv
+    └── sample_submission.csv
+```
+
+Do **not** upload the engineered parquet files — the notebook rebuilds them from the raw CSVs.
+
+---
+
+## 2. Open and run the notebook
+
+1. Go to <https://colab.research.google.com/> → **File → Upload notebook** →
+   `gci_honors_reproduction.ipynb`.
+2. **Runtime → Change runtime type → CPU** (the notebook is CPU-only by design; CatBoost GPU
+   silently early-stops on Logloss and loses ~0.002 AUC).
+3. **Runtime → Run all**. Allow ~3.5–4 h. Keep the tab alive (the free runtime disconnects
+   after ~90 min idle; training cells are not idle, but keep the tab visible).
+
+### What you should see
+
+The notebook prints library versions, the final matrix shape, then per-member OOF AUCs:
+
+```
+engineered: (171202, 101), (61500, 101)
+final: 98 features
+
+member OOF AUCs (expected -> reproduced):
+  LGB  0.76155 -> 0.7615x   [OK]
+  XGB  0.76171 -> 0.7616x   [OK]
+  CAT  0.76089 -> 0.7608x   [OK]
+  HGB  0.75814 -> 0.7581x   [OK]
+
+pinned recipe OOF AUC: 0.7624x (submitted: 0.76244)
+```
+
+The tolerance is ±0.004; a `DRIFT` assertion means the environment or feature parity broke the
+pipeline — **do not submit that run**, use the already-shipped v4 CSV and investigate.
+
+The notebook writes:
+
+- `submission.csv` (the regenerated predictions — **do not upload this as the competition file**)
+- `gci_honors_reproduction.zip` (notebook + submission, for the Honors upload)
+
+If the automatic download does not start, use the Colab file browser (left sidebar) to download
+the zip.
+
+---
+
+## 3. What to upload where
+
+| Artifact | Destination |
+|---|---|
+| `submission.csv` **from this notebook** | **Do not upload** — XGBoost/CatBoost thread-count drift makes it slightly different from the validated v4 file |
+| `submissions/submission_v4_cv0.76244.csv` | Competition platform — **must be the last prediction file** |
+| `gci_honors_reproduction.zip` | Honors code submission |
+
+If anything was uploaded to the competition platform **after** v4, re-upload
+`submission_v4_cv0.76244.csv` at the very end. Fallback if v4 cannot be re-uploaded:
+`submission_v3_recipe_cv0.76224.csv`.
+
+---
+
+## 4. Why not the notebook's `submission.csv`?
+
+The shipped v4 file was built with XGBoost `n_jobs=8` and CatBoost `thread_count=8` on the local
+machine. The notebook uses 2 threads for Colab. Both are thread-count-sensitive: on fold 0,
+XGBoost gave **0.759578 vs 0.759029** (2,250 vs 2,134 trees, prediction correlation 0.996) and
+CatBoost gave **0.758955 vs 0.759364** (correlation 0.9936). LightGBM was bit-identical. So the
+notebook reproduces the **recipe and CV within tolerance**, which is what the Honors code
+requirement needs; the validated v4 CSV remains the authoritative prediction file.
+
+---
+
+## 5. Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `AssertionError: put train.csv/test.csv/...` | Check `MyDrive/gci_competition/input/` (or `MyDrive/competition/input/`); re-run cell 2. |
+| Drive mount permission loop | Runtime → Restart runtime, re-run cell 2, allow the popup. |
+| `label_encoders` / parquet not found | The notebook does not need them; it rebuilds features from raw CSVs. |
+| LightGBM/XGBoost API warning | Warnings are suppressed; only an `AssertionError` is fatal. |
+| Session dies mid-run | Reconnect, re-run from the top. The notebook does not checkpoint members; budget a full rerun. |
+| Runtime disconnects at ~90 min | Keep the tab active; do not close the browser. Run the notebook in one sitting. |
+| Need to save time | Do not skip members — the blend weights are pinned and the asserts need all four. |
+| Final OOF AUC `DRIFT` | Use the shipped v4 CSV; the code artifact is still valid if the notebook ran end-to-end. |
+
+---
+
+## 6. Local sanity checks (optional, ~1 min)
+
+From the repo root, with the competition CSVs in place:
+
+```bash
+pip install -r requirements.txt
+# verify the feature engineering notebook / matrix
+jupyter nbconvert --to notebook --execute 01_feature_engineering.ipynb --output /tmp/fe_check.ipynb
+```
+
+The repaired `01_feature_engineering.ipynb` reproduces the reference 98-column matrix exactly
+(0 mismatching cells). The authoritative end-to-end path remains the Honors notebook.
+
+---
+
+## 7. Final checklist
+
+- [ ] Honors notebook ran end-to-end on Colab CPU with all four members `[OK]`.
+- [ ] `gci_honors_reproduction.zip` downloaded and contains the notebook (and `submission.csv`).
+- [ ] Honors zip uploaded to the Honors channel.
+- [ ] Competition platform's **last** prediction file is `submission_v4_cv0.76244.csv`.
+- [ ] Deadline confirmed: 2026-11-20 01:00 UTC (04:00 EAT).

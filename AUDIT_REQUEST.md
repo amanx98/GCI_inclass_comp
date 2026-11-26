@@ -1,5 +1,13 @@
 # AUDIT REQUEST — Devil's Advocate Review (GCI 2026 Pipeline)
 
+> **Status: DELIVERED.** The audit is complete — see [`AUDIT_FINDINGS.md`](AUDIT_FINDINGS.md).
+> Verdict: v4 reconstructs exactly from the saved artifacts, no leakage or distribution shift,
+> and no model change is warranted before the deadline. The two run-blocking notebook bugs
+> (QBIN NaN cast, stale summary-cell syntax error) are fixed and FE-verified, and the CatBoost
+> thread-determinism check has since completed (see §C2). The brief below is preserved as the
+> original request; the build scripts it references now live in
+> [`pipeline/`](pipeline/README.md) rather than `%TEMP%`.
+
 **To:** an independent AI agent (fresh context, no stake in the outcome)
 **Subject:** adversarial audit of the competition pipeline described in `PROCESS_LOG.md`,
 `TRAINING_STAGE_REVIEW.md`, and the artifacts in this workspace.
@@ -16,7 +24,8 @@ showing the specific checks you ran — not by saying "looks good."
 - `TRAINING_STAGE_REVIEW.md` — stage-by-stage rationale
 - Notebooks: `gci_honors_reproduction.ipynb` (final repro code), `05_nn_diversity.ipynb`,
   `03_ensemble_training_v2.ipynb`
-- Scripts (session temp dir, `C:\Users\amanuel\AppData\Local\Temp\opencode\` unless noted):
+- Scripts (canonical copies now in `pipeline/`; originals were in
+  `C:\Users\amanuel\AppData\Local\Temp\opencode\`):
   `bench_members2.py`, `bench_test_preds.py`, `rebuild_v3.py`, `overnight_retune.py`,
   `overnight_retune2.py`, `rebuild_v4_members.py`, `hgb_fix.py`
 - Params: `best_params_{lgb,xgb,cat,hgb}_e2.json`

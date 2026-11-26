@@ -1,0 +1,26 @@
+DEADLINE: 2026-11-20 01:00 UTC = 04:00 EAT (32 minutes remaining)
+
+TWO FILES TO UPLOAD:
+
+1. COMPETITION PLATFORM → prediction file
+   Path: submissions/submission_v4_cv0.76244.csv
+   - CV AUC: 0.76244 | Public LB: 0.76475
+   - 61,500 rows | IDs match sample_submission exactly
+   - TARGET ∈ [0.002, 0.772], mean 0.08992, std 0.08913
+   - NO NaNs, format: SK_ID_CURR,TARGET
+   - Upload as the LAST file (rule: last uploaded file counts)
+
+2. HONORS SUBMISSION → code artifact
+   Path: gci_honors_reproduction.zip (722 KB, added to archive)
+   - Contains: gci_honors_reproduction.ipynb + submission.csv + README_competition.md
+   - Honors notebook: CPU-only, reproduces the recipe and CV within ±0.004
+   - Notebook header, README, and AUDIT_FINDINGS all state: shipped CSV is authoritative
+   - XGBoost/CatBoost thread drift prevents byte-identical CSV; this is expected/ok
+
+NOTES:
+- v4 is plain v4 — ZERO v5 changes were adopted. The v5 round (Nov 19) was rejected
+  entirely: every workstream (W1–W7) failed to beat the bootstrap gate against v4.
+- Honors requirement satisfied by ONE notebook + one submission CSV (demonstration)
+- No further training needed. Time to upload.
+
+GITHUB: https://github.com/amanx98/GCI_inclass_comp

@@ -1,0 +1,22 @@
+{
+  "family": "xgb",
+  "n_splits": 5,
+  "fold_seed": 1337,
+  "model_seeds": [
+    42,
+    1337,
+    2026
+  ],
+  "oof_auc": 0.7614516907601345,
+  "params": {
+    "learning_rate": 0.018840552955192824,
+    "max_depth": 3,
+    "min_child_weight": 12.479073898375665,
+    "subsample": 0.7200762468698007,
+    "colsample_bytree": 0.47322294090686734,
+    "colsample_bylevel": 0.6971061460667621,
+    "reg_alpha": 0.00013726318898045882,
+    "reg_lambda": 20.69565682436443,
+    "gamma": 0.3881699724000254
+  }
+}

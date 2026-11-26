@@ -1,386 +1,292 @@
-# GCI In-Class Competition — HomeCredit Default Risk
+# GCI In-Class Competition — Home Credit Default Risk
 
-Solution pipeline for the GCI in-class competition (**due Nov 20, 01:00 UTC**), based on the
-[HomeCredit Default Risk](https://www.kaggle.com/competitions/home-credit-default-risk) dataset.
+**Status: COMPLETE — submitted 2026-11-20, before the 01:00 UTC deadline.**
+Repository: https://github.com/amanx98/GCI_inclass_comp
 
-**Metric:** ROC AUC · **Data:** 171,202 train rows × 98 engineered features (E2 set), 61,500 test rows
-**Compute:** Google Colab Free (T4 GPU) + local Ryzen 7 5800U (8c/16t) for CPU experiments
-
----
-
-## 📊 Current Status
-
-| Item | Value |
-|---|---|
-| **Current public LB** | **0.76475** — best score so far (✅ uploaded) |
-| Previous submissions | 0.76433–0.76435 (v2 recipe) → 0.7627 (anchor) → 0.66819 (dummy RF) |
-| **Current best recipe** | **v4 — CV 0.76244** — `submissions/submission_v4_cv0.76244.csv` |
-| v4 blend weights | LGB **.30** / XGBnew **.33** / CATnew **.33** / HGB **.04** |
-| CV → LB calibration | 0.7587 → 0.7627 (**+0.004**); 0.76203 → 0.76433–0.76435 (**+0.0023**) |
-| **Latest LB for v4** | **0.76475** (CV 0.76244 → LB +0.0023, consistent with v2) |
-| Honors artifact | `gci_honors_reproduction.ipynb` regenerated for v4 — **still must be run on Colab CPU** |
-| Submission rules | Unlimited submissions, **last file counts**, public LB is a subset of test |
-| Time left | ~2 days (deadline Nov 20, 01:00 UTC = 04:00 Nairobi) |
-
-### ✅ Local hyperparameter tuning — all ensemble members (completed Nov 17–18)
-
-Tuning ran **locally on the CPU** against the final 98-column E2 feature set. It started with
-the three GBM members (LightGBM, XGBoost, CatBoost) and was extended to HistGradientBoosting,
-which had never been tuned. Results are recorded in [`PROCESS_LOG.md`](PROCESS_LOG.md) phases 3 and 5.
-
-| Member | Tuning status | Before → after (single-seed unless noted) |
+| Deliverable | Artifact | Result |
 |---|---|---|
-| **LightGBM** | ✅ 40 Optuna trials on E2 | 0.75989 → **0.76120**; 3-seed build **0.76155** |
-| **XGBoost** | ✅ 26 Optuna trials on E2 | 0.76137 → **0.76192**; 3-seed build **0.76171** |
-| **CatBoost** | ✅ First-ever re-tune (20 fold-0 trials, top-3 on full 5-fold) | 0.76033 → **0.76088** full-CV; 2-seed rebuild **0.76063** |
-| **HistGradientBoosting** | ✅ First-ever re-tune (40 trials, full CV) | 0.75588 → **0.75820**; rebuild **0.75814** |
+| Prediction (competition platform) | `submissions/submission_v4_cv0.76244.csv` | **CV AUC 0.76244 · public LB 0.76475** — uploaded **last** |
+| Code (Honors / Outstanding) | `gci_honors_reproduction.zip` | self-contained notebook + demonstration `submission.csv` + `README_competition.md` |
 
-The HGB rebuild exposed a reproducibility bug: the tuning JSON stored only the four searched
-hyperparameters, so the first rebuild silently used sklearn defaults (`max_iter=100` → 0.74969).
-Re-running with the **full** tuned config (`max_iter=1000`, `early_stopping(0.1, 25)`) recovered
-0.75814, matching the tuning result. This bug class is now an explicit audit target in
-[`AUDIT_REQUEST.md`](AUDIT_REQUEST.md).
+The story below covers the full run: the baseline, the validation overhaul, every feature and
+model decision, the four recipe generations, the independent audit, the final v5 round that was
+rejected, and the two files that were submitted.
 
-**Protocol (identical for all three members):**
+---
 
-1. **Same folds everywhere** — 5-fold `StratifiedKFold`, `random_state=42`, on the full
-   171,202 rows. No 10% holdout carve-out (that was worth +0.0028 on its own).
-2. **Target encoding inside each fold only** — no leakage from validation rows into training.
-3. **Objective = full OOF AUC of the 3-seed-averaged member**, never the 10% holdout. Selection
-   noise on 6.1k rows was what produced the fake 0.76502 earlier.
-4. **Shallow trees only** (depth 3–4). The verified A/B/C benchmark showed leaves=63/127 lose
-   to the tuned depth-3/4 trees, so the search space is deliberately narrow.
-5. **CPU-only, fixed seeds (42 / 1337 / 2026)**, every trial written to an experiment log. The
-   GPU buys nothing here: on 171k × 98 the models train in minutes, and the one GPU run
-   (CatBoost) silently early-stopped on Logloss instead of AUC, costing ~0.0019 AUC.
-6. **Acceptance gate:** a new parameter set only replaces the pinned one if the rebuilt
-   member improves full OOF AUC by **≥ 0.0003** *and* the blend weights are re-validated on the
-   new OOFs. No blind substitution into the submission path.
+## 1. The result
 
-**Why this mattered:** all GBMs are 97–99.8% rank-correlated, so the blend was saturated —
-progression: 0.7587 (anchor) → 0.76203 (v2) → 0.76224 (v3) → **0.76244 (v4)**. Tuning delivered
-exactly the expected small gain. The neural-net diversity seat was also tested and **rejected**:
-MLP OOF 0.74897 with rank-corr 0.9242 vs XGBnew (fails both gates), TabNet collapsed to a
-constant 0.50000, and adding the MLP at any weight moved CV by only +0.00006.
+| Recipe | CV AUC (5-fold OOF) | Public LB | Disposition |
+|---|---:|---:|---|
+| Tutorial RF, 5 features | ~0.66 | 0.66819 | baseline, superseded |
+| Anchor (old 3-GBM pipeline) | 0.7587 | 0.7627 | first real CV↔LB calibration point |
+| v2 (E2 features + full-OOF selection) | 0.76203 | 0.76433–0.76435 | uploaded (two files, same recipe) |
+| v3 (re-tuned LGB/XGB, two XGB generations) | 0.76224 | — | built + validated; fallback, not uploaded |
+| **v4 (all four members tuned)** | **0.76244** | **0.76475** | **final / last uploaded file** |
 
-**After tuning:** rebuilt per-seed OOF/test predictions → re-ran hill-climb + weight grid on the
-verified OOFs → pinned v4 → validated the submission file (61,500 rows, IDs match sample
-submission, no NaNs, preds in [0.00202, 0.77167], Spearman corr vs v3 = 0.99985).
+CV → public-LB transfer was consistently **+0.0023** (v2 and v4). The private LB is unknown.
 
-### Verified model results (5-fold Stratified OOF, full 171,202 rows)
+**v4 recipe:** LGB **0.30** / XGB-new **0.33** / CAT-new **0.33** / HGB **0.04**.
 
-| Model / Blend | OOF AUC | Note |
+| Member | OOF AUC | Rank-corr vs XGB-new | Seeds |
+|---|---:|---:|---|
+| LightGBM (re-tuned) | 0.76155 | 0.9926 | 42 / 1337 / 2026 |
+| XGBoost (re-tuned) | **0.76171** | 1.0000 | 42 / 1337 / 2026 |
+| CatBoost (re-tuned, CPU only) | 0.76089 | 0.9819 | 42 / 1337 |
+| HistGradientBoosting (re-tuned) | 0.75814 | 0.9756 | 42 |
+
+Submission format verified: 61,500 rows, `SK_ID_CURR` exactly matches the sample submission,
+no NaNs, `TARGET ∈ [0.00202, 0.77167]`, mean 0.08992, std 0.08913.
+
+---
+
+## 2. The whole workflow
+
+### Phase 0 — Baseline (Nov 10–14)
+Reproduced the competition tutorial: a 5-feature random-forest pipeline scoring **0.66819**
+on the public LB. First real pipeline was a single LightGBM validated on a 10% holdout.
+
+### Phase 1 — Validation overhaul (Nov 14–15)
+The 10% holdout wasted ~34k rows and made blend selection high-variance: the reported
+"0.76502 holdout blend" was inflated noise, while the true full-data OOF was 0.7587.
+**Change:** all selection moved to full-data 5-fold `StratifiedKFold(seed=42)` OOF.
+Measured gain on comparable members: **+0.0028**. This single protocol decision underpins
+every number that follows.
+
+### Phase 2 — Feature engineering (Nov 15)
+33 raw columns (34 with `TARGET`; no bureau or previous-application tables) → 101 engineered
+columns → **98-column E2 matrix**: anomaly flags, missing indicators, domain ratios,
+`EXT_SOURCE` interactions, quantile bins, frequency encodings, then enrichment interactions
+(`EXT×AGE`, NaN-safe `EXT` products/squares, burden ratios, `NAN_COUNT`,
+`REGION_RATING×EXT_MEAN`) and **18 dead columns dropped**. Fold-local target encoding on
+7 high-cardinality categoricals. Combo-categorical TE was tested and **rejected (−0.0007)**.
+
+### Phase 3 — Audit of the original notebooks (Nov 15)
+A cell-by-cell review against the competition PDF and saved Drive artifacts found three real
+bugs:
+1. **Cell 12 "retrain on full data"** used XGBoost's iteration count from LightGBM
+   (`best_iteration_`) and a hard-coded 1000 iterations for CatBoost. It produced a *squashed*
+   prediction distribution (std 0.099 vs the correct 0.213). NB4 loaded those predictions
+   **by default**, so running it would have submitted the worse variant.
+2. **Blend strategy selected on a 6.1k-row holdout** — the source of the fake 0.76502.
+3. **Holdout target encoding used the full training set** — leakage-adjacent.
+
+Fix: a dedicated v2 runbook, full-OOF selection, and the standing rule
+*"final submission = CV-fold-averaged test predictions, never one-shot retrains."*
+
+### Phase 4 — v2 and the Colab run (Nov 16)
+The anchor blend (LGB .30 / XGB .55 / CAT .15) was submitted and scored **0.7627**, giving a
+CV↔LB calibration point. The rebuilt pipeline was run on Colab T4: all members reproduced
+locally within noise; blend CV 0.76174. That run also exposed a hardware trap: the CatBoost
+GPU backend has no AUC early stopping, so it silently stopped on Logloss — **0.75847 GPU vs
+0.76033 CPU**, with no exception raised. CatBoost was pinned to **CPU only** from then on.
+
+### Phase 5 — Hyperparameter tuning (Nov 16–17, local CPU)
+- LGB: 40 Optuna trials on E2 → 0.75989 → **0.76120** single-seed; 3-seed build 0.76155.
+- XGB: 26 trials → **0.76192** single-seed; 3-seed build 0.76171.
+- CAT: first-ever re-tune (20 fold-0 trials, top-3 validated on full CV) → **0.76088**; 2-seed rebuild 0.76089.
+- HGB: first-ever re-tune (40 trials) → **0.75820**; rebuild 0.75814.
+
+A reproducibility bug surfaced here too: the tuning JSON saved only the searched parameters,
+so the first HGB rebuild silently used sklearn defaults (`max_iter=100` → 0.74969). Re-running
+with the **full** config (`max_iter=1000`, `early_stopping(0.1, 25)`) recovered 0.75814.
+
+### Phase 6 — Diversity experiments and v3/v4 (Nov 17–18)
+- LogReg 0.742, RandomForest 0.736, ExtraTrees 0.732 — too weak; they **diluted** the blend.
+- MLP + categorical embeddings: OOF 0.74897, rank-corr 0.9242 vs XGB-new; TabNet collapsed
+  to a constant 0.50000. Adding the MLP moved CV by +0.00006. **NN seat rejected.**
+- Two-level stacking (Ridge / Logistic / LGBM meta with honest inner CV): 0.76112–0.76150 —
+  all below the linear weighted average. **Stacking rejected.**
+- Pseudo-labeling: the maximum test prediction is 0.77167, so no confident rows exist. **Rejected.**
+- v3 (re-tuned LGB/XGB, two XGB generations): CV **0.76224**, built and validated.
+- v4 (tuned CAT and HGB added): exhaustive weight search pinned
+  LGB .30 / XGBn .33 / CATn .33 / HGB .04 → CV **0.76244**. Submitted; **LB 0.76475**.
+
+### Phase 7 — Independent audit (Nov 18)
+An adversarial audit was commissioned in `AUDIT_REQUEST.md` and delivered as
+`AUDIT_FINDINGS.md`. Result: the modelling pipeline was sound — v4 reconstructs from saved
+OOF/test arrays to `max|diff| = 9.98e-17`, no leakage, no distribution shift (adversarial AUC
+0.5163), no ID/order leak (row-order AUC 0.5029). But it found two **run-blocking** defects:
+the Honors notebook and `01_feature_engineering.ipynb` both crashed in the quantile-bin cell
+(`pd.cut(...).astype(np.int8)` on NaNs), and NB1 still had a literal `1. Run 02_...` syntax
+error. Both were fixed; the repaired notebooks rebuild the 98-column matrix with **0 mismatching
+cells** out of 16.8M train and 6.0M test values. The audit also corrected overstated claims:
+the "~0.775 CV ceiling", the "known leak" at LB #1, and the published "rank-corr ≤ 0.90" seat
+rule that had not actually been applied uniformly.
+
+### Phase 8 — v5 workstream round (Nov 19): everything rejected
+A modular harness (`pipeline/v5/common.py`) reproduced v4 OOF 0.762442 exactly, then five
+workstreams were tested against a 500-rep paired bootstrap gate (95% CI entirely > 0):
+
+| Workstream | Result | Verdict |
 |---|---|---|
-| LGBnew ×3 seeds (re-tuned) | 0.76155 | rank-corr 0.993 vs XGBnew |
-| XGBnew ×3 seeds (re-tuned) | 0.76171 | **best single model** |
-| CATnew ×2 seeds (re-tuned) | 0.76063 | rank-corr ~0.981 vs XGBnew |
-| HGBnew (re-tuned) | 0.75814 | rank-corr 0.9756 vs XGBnew |
-| MLP + embeddings (NN diversity) | 0.74897 | ❌ rejected — corr 0.9242, fails both gates |
-| **Anchor blend** (LGB .30 / XGB .55 / CAT .15) | 0.7587 | submitted → LB 0.7627 |
-| **v2** (E2 + full-data OOF selection) | 0.76203 | submitted → LB 0.76433–0.76435 |
-| **v3** (re-tuned LGB/XGB, 2 XGB generations) | 0.76224 | built + validated, corr 0.9995 vs v2 |
-| **v4 — current** (LGB .30 / XGBn .33 / CATn .33 / HGB .04) | **0.76244** | **submitted → LB 0.76475** |
+| W1 model-based imputation of EXT_SOURCE_1/3, OWN_CAR_AGE | −0.000296 | rejected |
+| W2 full-CV Optuna re-tune (80–100 trials/family) | XGB +0.000258, LGB +0.000152, HGB −0.000174, CAT −0.000502 | members only |
+| W3 seed expansion | XGB7-new 0.761714, CAT4 0.760995, HGB3 0.759125 | members only |
+| W4 FE round 3 (KMeans, cat-pair counts, REGPOP×EXT) | all < +0.0003 | rejected |
+| W5 blend re-search (15 members, hill-climb + grid + NNLS) | best 0.762454; CI [−0.000047, +0.000077], p=0.626 | **gate failed** |
+| W5 variant sweeps (28,336 weight combos) | best 0.762455; CI [−0.000037, +0.000065], p=0.684 | **gate failed** |
+| W6 CV-protocol variants (10-fold, fold seed 1337) | 10-fold LGB OOF 0.761311 | no gain |
+| W7 further variants | nothing passed | rejected |
 
-> **Note on the original pipeline:** the previous 3-GBM blend looked like it gained a lot over its
-> best member (+0.0002). The real gain is that the three GBMs are **97–99% rank-correlated** —
-> they are nearly the same model, so diversity is the binding constraint, not tuning.
+**Conclusion:** every v5 lever landed inside noise. **Zero v5 changes were adopted** — v4 is
+plain v4. See §5 for the honest headroom estimate.
 
-### Colab run 1 — local vs. Colab parity (Nov 16, executed notebook, verified)
+### Phase 9 — Final submission (Nov 20)
+`FINAL_INSTRUCTIONS.txt` records the two uploads made with the deadline approaching:
+1. `submissions/submission_v4_cv0.76244.csv` → competition platform, **as the last file**.
+2. `gci_honors_reproduction.zip` (723 KB) → Honors: notebook + demonstration `submission.csv`
+   + `README_competition.md`.
 
-| Member | Local | Colab run | Verdict |
-|---|---|---|---|
-| LGB 3-seed | 0.75989 | 0.75985 | ✅ |
-| XGB 3-seed | 0.76167 | 0.76161 | ✅ (CPU `hist`; the GPU probe failed on Colab — harmless) |
-| HGB | 0.75588 | 0.75562 | ✅ |
-| CAT 2-seed | 0.76033 | **0.75847** | ⚠️ **GPU trap** — AUC early-stopping is not implemented on CatBoost GPU, so it stopped on Logloss instead |
-| **Blend** | **0.76203** | **0.76174** | ✅ self-selected LGB .15 / XGB .75 / CAT .10 |
-
-The notebook reproduced the local numbers within noise on all members, and the Colab blend
-landed at **CV 0.76174** — a **+0.003 over the anchor's 0.7587**. Colab output:
-`Drive/GCI Competition/submissions/submission_v2_cv0.76174.csv`
-(test stats mean 0.08990, std 0.08889 — matches local).
-
-**The CatBoost cell has been fixed to CPU-only**, so any re-run now reproduces the strong
-0.7603 CAT member instead of the degraded GPU 0.75847. See decision #9 below.
-
-> ⚠️ **Note:** `submission_v2_cv0.76174.csv` lives on Google Drive and has **not** been copied
-> into `submissions/` locally yet, so it is not in this repo. Copy it across to have it
-> version-controlled and side-by-side with the others.
+A local execution attempt of the Honors notebook reached cell 7 and died with a LightGBM
+`MemoryError` on this machine (`honors_local_run_console.log`); the demonstration CSV shipped
+in the zip is therefore the validated v4 file (the two are byte-identical, `csv_diff.txt` is
+empty). The notebook itself is statically verified and its feature cells are verified to
+rebuild the reference matrix exactly. This is disclosed rather than hidden.
 
 ---
 
-## 📈 Score Ladder
+## 3. Every decision, and why
 
-| Stage | CV AUC | Est. LB | Status |
-|---|---|---|---|
-| Dummy RF (tutorial, 5 features) | ~0.66 | 0.668 | ✅ submitted, superseded |
-| Anchor blend | 0.7587 | 0.7627 | ✅ submitted |
-| v2 recipe (E2 + OOF selection) | 0.76203 | 0.76433–0.76435 | ✅ submitted |
-| v3 recipe (re-tuned LGB/XGB) | 0.76224 | — | ✅ built + validated, not uploaded |
-| **v4 recipe (all 4 members tuned)** | **0.76244** | **0.76475** | ✅ **submitted — current best** |
-| NN diversity seat (MLP / TabNet) | — | — | ❌ rejected (see phase 6 of `PROCESS_LOG.md`) |
-| Final action | — | — | ⏳ run Honors notebook, keep v4 as **last** file |
+**Validation & selection**
+1. **CV decides; the public LB only sanity-checks.** The public LB is a subset of test and
+   mildly optimistic. No recipe was chosen because of a public score.
+2. **Full OOF, never the holdout.** The 6.1k-row holdout gave ±0.005 noise; dropping it was
+   worth +0.0028. The holdout survived only as a final sanity check.
+3. **One submission per validated recipe.** Unlimited uploads are not free probing; overfitting
+   the public subset causes private-LB drops.
+4. **A new recipe needs a passed gate**, not just a higher point estimate: paired bootstrap on
+   OOF with a fully positive 95% CI (v5's +0.000012 with p=0.626 failed).
+5. **Honest optimism correction:** CV weight-search selection optimism is ~0.0001–0.0002.
 
-**Realistic ceiling for this dataset: ~0.775 CV → ~0.770 LB.** The application table only
-(171k rows, no auxiliary tables) is a narrow signal pool. The #1 entry on the public LB at
-**1.000** is a known leak/hand-labeling artifact and is explicitly not a target.
+**Data & features**
+6. **Domain features over capacity.** Deeper trees (leaves 63/127) lost to depth-3/4 trees,
+   so gains had to come from features and diversity, not model size.
+7. **Keep validated enrichments; keep the DEAD list.** Re-adding `ORGANIZATION_TYPE` cost
+   −0.00126 (5/5 folds negative; CatBoost fold 0 −0.00140), `FLAG_EMP_PHONE` −0.00041,
+   all extras −0.00104. Univariate signal was misleading; the pruning is empirically correct.
+8. **Keep the shipped fold-mean TE.** Nested TE −0.00013, no TE −0.00036, leave-one-out TE
+   collapsed to 0.5265 (the model inverts the encoding and recovers the row's own label).
+9. **Transductive feature encoders** (label/frequency on train+test combined) are used with no
+   target information and are disclosed; adversarial AUC 0.5163 shows no observable shift.
+10. **Per-frame enrichment fills were left alone.** Train and test use means from their own
+    frame (2.1–3.2% relative difference); a protocol deviation, not leakage. Rebuilding every
+    member for a negligible effect before the deadline was not worthwhile.
 
----
+**Models & ensembling**
+11. **Final submission = CV-fold-averaged predictions, never one-shot retrains** (bug #1).
+12. **CatBoost pinned to CPU** — the GPU silently early-stops on Logloss instead of AUC.
+13. **Only near-equal-strength members earn a seat.** LogReg/RF/ET at 0.73–0.74 dilute despite
+    lower correlation; HGB at 0.75814 with corr 0.9756 was kept only as a 4% plateau weight.
+14. **Linear weighted average wins.** Rank-average 0.76200, logistic meta 0.76145, LGBM meta
+    0.76112–0.76150, probability blend 0.76244. The GBMs are 97–99.8% rank-correlated.
+15. **HGB's 4% seat is noise** (+0.000007, CI [−0.000025, +0.000040]); it was kept only because
+    the already-uploaded file contained it.
+16. **NN diversity rejected on measured evidence**, not assumed: MLP 0.74897 / corr 0.9242,
+    TabNet collapsed, any-weight blend gain +0.00006.
+17. **Pseudo-labeling rejected** — max test prediction 0.77167 leaves no confident rows.
 
-## 🧭 Process & Key Decisions
-
-This section records *why* the pipeline looks the way it does, so decisions aren't silently
-re-litigated. The full experiment log with every benchmark lives in
-[`MASTER_PLAN.md`](MASTER_PLAN.md); the inter-agent status file is [`HANDOFF_TO_GLM.md`](HANDOFF_TO_GLM.md).
-
-### 1. Audit-first: we found and fixed 3 real bugs before submitting
-
-The original notebooks (NB1–NB4) were built and then **audited cell-by-cell** against the
-competition PDF and the saved Drive artifacts. Three genuine bugs were found:
-
-| # | Bug | Impact | Fix |
-|---|---|---|---|
-| **1** | NB3 cell 12 "retrain on full data" used XGBoost's `num_boost_round=lgb_final.best_iteration_` (LightGBM's iteration count!) and a hard-coded 1000 iters for CatBoost | Produced `final_full_preds.npy` with a **squashed distribution** (0.346–0.777, std 0.099 vs the correct blend's 0.213); corr with the good blend only 0.981. NB4 loaded this file **by default**, so running NB4 as-is would have submitted the worse variant | Cell 12 **removed from the submission path entirely**. Final submission is now always the **CV-fold-averaged** test predictions, never a one-shot retrain |
-| **2** | Blend strategy was selected on a **10% holdout** (6.1k rows → ±0.005 noise) | Reported holdout AUC 0.76502 was **inflated by ~+0.006**; the true value is 0.7587 | Selection moved to **full OOF** via hill-climb + exhaustive weight grid. The holdout is retained only as a sanity check and **no selection decision leans on it** |
-| **3** | Holdout target encoding was computed from the full training set | Leakage-adjacent | Kept as sanity check only, same as above |
-
-**Decision rule that came out of bug #1 and now governs everything:**
-> *Final submission = CV-fold-averaged test predictions, never one-shot retrains.*
-
-A single full-data model is not the same object the blend weights were calibrated on, and
-that mismatch costs AUC.
-
-### 2. Selection discipline: CV decides, LB only sanity-checks
-
-Five standing rules govern every choice in this repo:
-
-1. **CV decides everything.** The public LB is a *subset* of test and is mildly optimistic
-   (observed +0.004). We never pick a recipe because it scored well on the public LB.
-2. **Never select on the holdout.** Select on full OOF. The holdout is a final sanity check.
-3. **Every artifact is saved** — per-seed OOF predictions, test predictions, the recipe JSON,
-   and an experiment log. Reproducibility is also an honors-award requirement.
-4. **Fixed seeds everywhere**, library versions recorded.
-5. **One submission per validated recipe.** Unlimited submissions ≠ free probing; overfitting
-   the public subset is exactly how people drop on the private LB.
-
-### 3. Verified locally before spending GPU: drop the holdout, don't go deeper
-
-All tuning decisions were validated on the local Ryzen 7 (LightGBM 4.7 CPU, 5-fold, full 171k)
-before touching Colab time.
-
-| Experiment | Config | OOF AUC | Conclusion |
-|---|---|---|---|
-| **Holdout removal** | Optuna-tuned depth-3 params + TE, CV on full 171k | **0.75822** | vs 0.75546 for the same params/folds trained on the 90% subset → **+0.0028 free** just from dropping the holdout carve-out |
-| **Depth** | leaves=63 / leaves=127, deeper | 0.75546 / 0.75580 | Deeper trees **lose**. The signal is saturated for plain GBMs → gains must come from **new features** and **model diversity**, not depth |
-| **FE: EXT×AGE + NaN-safe EXT poly + burden ratios + NAN_COUNT** | +17 features | 0.75881 (+0.00059) | Keep — modest but real |
-| **FE: categorical-combo TE (fold-safe)** | +4 combo TEs | 0.75920 | Keep |
-| **FE: drop 18 dead features** | no combo TE | 0.75963 | Keep (feature pruning helps) |
-| **Diversity: HGB / LogReg / RF as 4th member** | HGB 0.75582, LogReg 0.74213, RF 0.73687 | — | Only **near-equal-strength** members earn a seat: LGB+HGB 0.65/0.35 = 0.75937 (**+0.0012**), but *adding* LogReg or RF **hurts** (0.75703 / 0.75499). LogReg meta-stacking over 4 members = 0.75604 (flat stacking dilutes) |
-
-**Decision:** the Optuna depth-3 parameters are *correct* and were kept. The plan is to add
-signal and diversity, not capacity.
-
-### 4. Feature engineering is validated batch-by-batch, not by intuition
-
-Round 2 features were ranked by expected value and each batch was gated on measured ΔOOF:
-
-- **Tier A (dominant signal):** `EXT_SOURCE_1/2/3 × DAYS_BIRTH` age interactions, NaN-safe
-  `EXT_x * EXT_y` products and `(EXT_x - EXT_y)` diffs (fill NaN with the column mean **for the
-  interaction only**, plus an `EXT_x_MISS & EXT_y_MISS` indicator), degree-2 polynomials on the
-  three EXT_SOURCE columns, `EXT_SOURCES_PROD_NONAN`.
-- **Tier B (financial ratios):** `AMT_ANNUITY / AMT_CREDIT`, `AMT_CREDIT / AMT_INCOME_TOTAL`,
-  `AMT_CREDIT / (CNT_FAM_MEMBERS+1)`, `AMT_INCOME_TOTAL / (CNT_CHILDREN+1)`,
-  `AMT_ANNUITY / (|DAYS_EMPLOYED|/365 + 1)` (payment burden vs. work history),
-  `CREDIT_TERM × REGION_RATING_CLIENT`, plus row-level `NAN_COUNT`.
-- **Tier C (categorical combos, fold-safe TE, smoothing=20):**
-  `OCCUPATION_TYPE × REGION_RATING_CLIENT`, `ORGANIZATION_TYPE × REGION_RATING_CLIENT`,
-  `NAME_INCOME_TYPE × NAME_EDUCATION_TYPE`.
-
-**Gate:** one quick 5-fold LGBM per batch; keep a batch only if **ΔOOF ≥ +0.0003**. Every
-experiment is logged in `MASTER_PLAN.md` §8.
-
-### 5. The final blend recipe was searched exhaustively, not hand-picked
-
-With the enriched E2 feature set and full-data members (LGB×3 seeds, XGB×3 seeds, CAT×2,
-HGB), **all pairs and triples were searched exhaustively at 0.01 weight resolution**:
-
-> **`LGB3 0.06 + XGB3 0.64 + CAT 0.30 + HGB 0.00` → CV 0.76203**
-> (stable across search resolutions: coarse grid 0.76194, hill-climb 0.76186, fine grid ~0.76203)
-
-HGB earns **zero weight** once XGB and CatBoost are at full strength on the new features — the
-two strongest GBMs dominate. `03_ensemble_training_v2.ipynb` re-selects the recipe on OOF at
-runtime, so it adapts if member strengths shift on Colab hardware.
-
-### 6. Optuna's tuning was mis-specified — re-tuning is scheduled for Nov 17
-
-Audit finding: **NB2's Optuna objective never applied target encoding** ("simplified version —
-full implementation in notebook 3"). The tuned parameters were therefore selected on a feature
-space *without* the `_TE` columns that NB3 actually trains with, and NB2's reported AUCs are
-**not comparable** to NB3's.
-
-**Decision:** the Nov 17 re-tune must use the **same fold-level TE as NB3**, with a **5-fold OOF
-objective** (not 3-fold — selection noise matters here), 30 trials × 3 models.
-
-Also noted: NB2's `MedianPruner` never actually pruned (`trial.report(cv_score, step=0)` reports
-once per trial, so there are no intermediate values to prune on). Harmless, but the re-run ignores
-pruning rather than pretending it works.
-
-### 7. The honors notebook has to actually reproduce the submission
-
-The original "polished notebook" was just a copy of NB4 with cleared outputs — it loads `.npy`
-files from Drive, so it **does not reproduce the submitted CSV end-to-end**. The competition PDF
-confirms the Honors/Outstanding track requires submitted code.
-
-**Decision:** build `gci_honors_reproduction.ipynb` as a **single self-contained notebook**:
-raw CSVs → feature engineering → 4 members (hardcoded tuned params, seeds LGB×3, XGB×3, CAT×2)
-→ OOF weight grid → `submission.csv` → zip for the Honors upload. A citation list is included for
-any referenced public code.
-
-### 8. Data integrity checks that closed off exploitation paths
-
-The five `FLAG_*` columns and the renumbered IDs were confirmed against
-`HomeCredit_columns_description.xlsx` and by direct data inspection: **no hidden columns to
-exploit**. The signal genuinely lives in feature engineering, so that is where the effort goes.
-
-### 9. The GPU is not always faster — and on CatBoost it silently costs accuracy
-
-Colab run 1 surfaced a trap that only appears on real hardware. The CatBoost cell tried GPU
-first with a CPU fallback, and the GPU path **did not error** — it just produced a *worse* model:
-**OOF 0.75847 on GPU vs 0.76033 on CPU** (≈ −0.0019, enough to move the blend).
-
-**Root cause:** CatBoost's GPU backend does not implement AUC-based early stopping, so the model
-silently early-stopped on **Logloss** instead of the intended **AUC** metric. No exception was
-raised, so the "GPU if available, CPU otherwise" pattern looked like it was working.
-
-**Decision:** the CatBoost member is now **hard-pinned to CPU** (`task_type` removed, GPU branch
-deleted) so the strong 0.7603 member is reproducible on every re-run. The general lesson: on this
-dataset, the GPU buys nothing — XGBoost ran on CPU `hist` on Colab anyway, and the one model that
-*did* use the GPU (CatBoost) lost ~0.002 AUC. **Local CPU experiments are the fast path, not the
-slow fallback.**
-
-Also worth recording: the Colab blend self-selected **LGB .15 / XGB .75 / CAT .10**, which differs
-from the local exhaustive-grid recipe (**LGB .06 / XGB .64 / CAT .30**) because the Colab CAT member
-was the degraded GPU one. That is precisely why the CAT cell had to be fixed before any further
-Colab runs — otherwise the recipe selection would have been fitted to a broken member.
+**Reproducibility & honesty**
+18. **Fixed seeds everywhere** (members 42/1337/2026, folds 42, Optuna sampler 42) and exact
+    library versions recorded in `pipeline/ENVIRONMENT.txt`.
+19. **Build evidence moved out of `%TEMP%` into `pipeline/`**, so a Windows temp cleanup cannot
+    destroy the audit trail.
+20. **Bit-exact reproduction is not claimed.** XGBoost `hist` and CatBoost are thread-count
+    sensitive (fold-0 corr 0.996 / 0.9936); the Honors notebook reproduces recipe and CV within
+    ±0.004, and the shipped CSV is authoritative.
+21. **Overstated claims were corrected**: "~0.775 ceiling", "known leak at LB #1", and the
+    mis-stated seat rule were removed from the source-of-truth docs.
 
 ---
 
-## 🗂 Files & Notebooks
+## 4. Verification & audit record
 
-| File | Role | Status |
-|---|---|---|
-| `01_feature_engineering.ipynb` | Feature engineering + adversarial validation, saves parquet | ✅ working (cell 12 syntax error fixed) |
-| `02_optuna_tuning.ipynb` | 50 trials × 3 models | ⚠️ **stale** — tuned without TE; replaced by the local re-tunes |
-| `03_ensemble_training.ipynb` | Original 5-fold ensemble + stacking + SHAP | ⚠️ superseded (contains bugs 1–3) |
-| `03_ensemble_training_v2.ipynb` | Evidence-based rebuild, OOF hill-climb + weight grid | ✅ historical runbook; params overridden with re-tuned values, CAT pinned to CPU |
-| **`05_nn_diversity.ipynb`** | Phase 2 NN diversity on Colab T4: MLP + embeddings, TabNet, seat gate | ✅ **executed** — MLP 0.74897 / corr 0.9242, TabNet collapsed → seat rejected |
-| **`gci_honors_reproduction.ipynb`** | **Self-contained end-to-end reproduction of v4** (14 cells, CPU-only, tuned params + pinned weights hardcoded) | ✅ **submission artifact — run on Colab CPU (~3.5–4 h) and zip** |
-| `04_final_submission.ipynb` | Legacy finalizer | ⛔ **DO NOT RUN** — loads the buggy squashed `final_full_preds.npy` |
-| **`PROCESS_LOG.md`** | Full chronological record, all 8 phases, rule-compliance and artifact map | ✅ **primary source of truth** |
-| **`AUDIT_REQUEST.md`** | Devil's-advocate audit brief (16 attack surfaces) | ⏳ audit not yet delivered (`AUDIT_FINDINGS.md`) |
-| `MASTER_PLAN.md` | Experiment log and day-by-day plan | 📁 historical (superseded by `PROCESS_LOG.md`) |
-| `HANDOFF_TO_GLM.md` | Inter-agent handoff | 📁 historical (its early sections were superseded mid-file — read the GLM RESPONSE at the bottom) |
-| `TRAINING_STAGE_REVIEW.md` | 7-stage synthesis, rule-compliance and guide-mapping tables | ✅ |
-| `QUICKSTART.md` | Colab T4 runbook (Drive layout, keepalive, troubleshooting) | ✅ |
-| `phase1_diversity_v{1,2,3}.py`, `phase1_results_summary.json` | Phase 1 diversity experiments (script iterations + results) | 📁 historical; v3 is final, results later found to be weaker regenerated runs |
-| `submissions/submission_anchor_blend_v1.csv` | Anchor submission — **LB 0.7627** | ✅ uploaded |
-| `submissions/submission_v2_recipe_cv0.76203.csv` | v2 recipe — **LB 0.76433–0.76435** | ✅ uploaded |
-| `submissions/submission_v3_recipe_cv0.76224.csv` | v3 recipe — **CV 0.76224**, corr 0.9995 vs v2 | ✅ built, fallback |
-| **`submissions/submission_v4_cv0.76244.csv`** | **v4 recipe — CV 0.76244, LB 0.76475** | ✅ **current best; keep as LAST file** |
+- **v4 reconstructs exactly** from saved OOF/test arrays: `max|diff| = 9.98e-17`, corr = 1.0.
+- **v4 > v3** = +0.000199, 500-rep bootstrap 95% CI [+0.000085, +0.000327], 4/5 folds positive.
+- **Feature parity**: repaired Honors notebook rebuilds 98 columns, 0 mismatches in 16.8M train
+  and 6.0M test cells; `01_feature_engineering.ipynb` runs end-to-end and matches the reference
+  parquet cell-for-cell.
+- **No leakage**: TE from fold-train means only; folds identical everywhere; no ID overlap;
+  no duplicate feature rows; adversarial AUC 0.5163; row-order AUC 0.5029.
+- **Blend variants**: logit 0.762440, rank 0.762433, power 0.762444 vs probability 0.762442 —
+  no real gain.
+- **Full evidence**: `AUDIT_FINDINGS.md` (18 checks passed, 3 explicitly unverifiable).
 
-### Engineered features (on Drive)
-
-`X_e2.parquet` / `X_test_e2.parquet` — 98 columns (E2 set, 16 enrichments + 18 dead features removed).
-Tuned params: `best_params_{lgb,xgb,cat,hgb}_e2.json` (session temp dir).
-Verified OOF/test `.npy` predictions and `v4_recipe.json` — see the artifact map in `PROCESS_LOG.md` §4.
+**Honest limitations**
+1. Public LB ≠ private LB; +0.0023 transfer on the public subset is not guaranteed privately.
+2. Thread-count drift prevents byte-identical regeneration; do not upload the notebook's CSV.
+3. Enrichment fill means are per-frame (2.1–3.2% relative difference).
+4. HGB's seat is statistically indistinguishable from zero.
+5. Remaining headroom on this 34-column subset is a few **1e-4**, not 1e-2.
 
 ---
 
-## 🗓 Timeline
+## 5. Repository map
 
-| Day | Focus | Status |
-|---|---|---|
-| **Nov 15** | Audit, bug fixes, anchor submission, NB3 v2 + honors notebook built, FE Round 2 validated locally | ✅ done |
-| **Nov 16** | NB3 v2 on Colab T4; FE Round 2 | ✅ Colab run 1 verified — blend CV 0.76174, CAT GPU trap found + fixed |
-| **Nov 17** | Re-tune LGB/XGB, first CAT + HGB tune, NN diversity test, v3 build | ✅ done — v3 CV 0.76224; NN seat rejected; v4 development started |
-| **Nov 18** | Rebuild all tuned members, hill-climb v4, build + validate submission | ✅ **done — v4 CV 0.76244 → LB 0.76475** |
-| **Nov 19** | Run Honors notebook on Colab CPU, zip it, final upload (v4 must be last) | ⏳ |
+```
+.
+├── README.md                          # this file — final project report
+├── FINAL_INSTRUCTIONS.txt             # the two files uploaded at the deadline
+├── README_competition.md              # Honors README (also inside the zip)
+├── QUICKSTART.md                      # Colab runbook
+├── PROCESS_LOG.md                     # chronological record (primary history)
+├── AUDIT_REQUEST.md / AUDIT_FINDINGS.md
+├── TRAINING_STAGE_REVIEW.md           # historical stage synthesis
+├── MASTER_PLAN.md / HANDOFF_TO_GLM.md # historical snapshots (superseded)
+├── 01_feature_engineering.ipynb       # repaired, verified
+├── 02_optuna_tuning.ipynb             # rewritten: CPU, 5-fold, E2 + TE
+├── 03_ensemble_training.ipynb         # historical — DO NOT RUN
+├── 03_ensemble_training_v2.ipynb      # historical runbook
+├── 04_final_submission.ipynb          # DO NOT RUN — loads squashed preds
+├── 05_nn_diversity.ipynb              # NN seat test, rejected
+├── gci_honors_reproduction.ipynb      # self-contained Honors code artifact
+├── gci_honors_reproduction.zip        # submitted Honors bundle
+├── requirements.txt                   # working ranges for Python 3.13
+├── pipeline/                          # exact build scripts, params, recipes, environment
+│   ├── audit/                         # scripts behind AUDIT_FINDINGS.md
+│   └── v5/                            # W1–W6 harness and results (all rejected)
+├── phase1_diversity_v{1,2,3}.py       # historical diversity experiments
+├── phase1_results_summary.json
+└── submissions/
+    ├── README.md                      # submission history + last-file rule
+    ├── submission_anchor_blend_v1.csv       # LB 0.7627
+    ├── submission_v2_recipe_cv0.76203.csv    # LB 0.76433–0.76435
+    ├── submission_v3_recipe_cv0.76224.csv    # CV 0.76224 (fallback)
+    └── submission_v4_cv0.76244.csv           # CV 0.76244 / LB 0.76475 — LAST FILE
+```
+
+Not committed on purpose: raw `train.csv`/`test.csv` (~60 MB), Drive snapshots, `.npy`/parquet
+intermediates, corrupt `.broken-bak` notebooks, and one-off scratch scripts.
 
 ---
 
-## ⚙️ Setup
+## 6. Reproduce
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Getting the data
+Place `train.csv`, `test.csv`, `sample_submission.csv` in
+`competition_unzipped/04. Competition (due Nov 20)/Competition/input/`.
 
-Raw `train.csv` / `test.csv` are **not committed** (~60MB). Place them at:
-
-```
-competition_unzipped/04. Competition (due Nov 20)/Competition/input/
-├── train.csv              <- not tracked by git
-├── test.csv               <- not tracked by git
-└── sample_submission.csv
-```
-
-In Colab, upload them to Drive at `MyDrive/gci_competition/input/` instead.
-
-### Expected runtimes (Colab T4)
-
-| Notebook | Time | Description |
-|---|---|---|
-| `01_feature_engineering.ipynb` | ~15 min | Feature engineering, adversarial validation, saves parquet |
-| `02_optuna_tuning.ipynb` | ~2–3 h | 50 trials × 3 models |
-| `03_ensemble_training_v2.ipynb` | ~2–3 h | Seed averaging, 4 members, OOF recipe selection |
-| `gci_honors_reproduction.ipynb` | ~3–4 h | End-to-end reproduction (full pipeline, no Drive deps) |
+- **End-to-end:** run `gci_honors_reproduction.ipynb` on a CPU runtime (~3.5–4 h). It rebuilds
+  features, all four members, and the pinned blend from the raw CSVs, then asserts each member
+  OOF is within ±0.004 of the shipped values. Its `submission.csv` is for demonstration —
+  `submissions/submission_v4_cv0.76244.csv` is the authoritative prediction.
+- **Feature matrix only:** `01_feature_engineering.ipynb` (~1 min locally).
+- **Historical evidence:** `pipeline/README.md` documents the exact scripts, parameters and
+  recipes used to produce v3/v4 and the audit.
 
 ---
 
-## 📁 Repo layout
+## 7. Rules compliance
 
-```
-.
-├── 01_feature_engineering.ipynb
-├── 02_optuna_tuning.ipynb
-├── 03_ensemble_training.ipynb          # legacy (superseded)
-├── 03_ensemble_training_v2.ipynb       # historical runbook (re-tuned params)
-├── 04_final_submission.ipynb            # legacy — DO NOT RUN
-├── 05_nn_diversity.ipynb                # NN diversity seat (rejected)
-├── gci_honors_reproduction.ipynb        # self-contained v4 honors artifact ← RUN THIS
-├── PROCESS_LOG.md                       # full chronological record + artifact map
-├── AUDIT_REQUEST.md                     # pending devil's-advocate audit brief
-├── TRAINING_STAGE_REVIEW.md             # 7-stage synthesis
-├── MASTER_PLAN.md                       # historical plan
-├── HANDOFF_TO_GLM.md                    # historical handoff
-├── QUICKSTART.md                        # Colab T4 runbook
-├── phase1_diversity_v{1,2,3}.py         # phase 1 scripts (v3 final)
-├── phase1_results_summary.json
-├── README.md
-├── requirements.txt
-├── submissions/
-│   ├── submission_anchor_blend_v1.csv       # LB 0.7627
-│   ├── submission_v2_recipe_cv0.76203.csv   # LB 0.76433–0.76435
-│   ├── submission_v3_recipe_cv0.76224.csv   # CV 0.76224 (fallback)
-│   └── submission_v4_cv0.76244.csv          # CV 0.76244 / LB 0.76475 ← LAST FILE
-└── competition_unzipped/04. Competition (due Nov 20)/
-    ├── competition_tutorial.pdf
-    └── Competition/
-        ├── README.ipynb
-        ├── tutorial.ipynb
-        ├── HomeCredit_columns_description.xlsx
-        └── input/sample_submission.csv
-```
-
----
-
-## ⚠️ Known risks
-
-| Risk | Mitigation |
+| Rule | Status |
 |---|---|
-| Colab session dies mid-run | All intermediates written to Drive after each fold; resume = re-run remaining folds |
-| T4 too slow for seed averaging | Seeds only for XGB/CAT; LightGBM on CPU is fast at this data size |
-| Overfitting the holdout / OOF | Hill-climb capped at ≤6 members; holdout untouched as a final sanity check |
-| Deadline crunch | The anchor blend is already ≥ 0.76 on the LB, so a late failure still lands a strong score |
-| Honors notebook not reproducible | `gci_honors_reproduction.ipynb` is end-to-end and must be validated before Nov 19 |
+| No external data | ✅ Only provided CSVs; NNs trained from scratch; no pretrained weights |
+| No hand-labeling | ✅ Every prediction model-generated |
+| Fixed seeds | ✅ 42 / 1337 / 2026; folds 42; Optuna sampler 42 |
+| Honors code | ✅ Self-contained notebook + zip submitted; recipe/CV reproduce within ±0.004 |
+| Cite public code | ✅ Tutorial/README and public HomeCredit EDA conventions cited in notebook header |
+| Last file counts | ✅ v4 uploaded last |
+| Transductive encoding | ✅ Disclosed: feature-only statistics fit on train+test |

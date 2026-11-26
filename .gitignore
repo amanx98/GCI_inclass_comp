@@ -24,7 +24,12 @@ dist/
 venv/
 env/
 
-# ---- Generated ML artifacts ----
+# ---- Local Drive snapshots (duplicate raw data + intermediate arrays) ----
+colab_output_nov17/
+drive_snapshot_nov17/
+
+# ---- Generated ML artifacts (rebuildable, large) ----
+*.npy
 *.parquet
 *.pkl
 *.pickle
@@ -37,6 +42,15 @@ models/
 optuna_studies/
 checkpoints/
 artifacts/
+
+# ---- One-off local scratch / failed-run logs ----
+csv_diff.txt
+memcheck.py
+run_honors_local.py
+honors_local_run/
+honors_local_run_console.log
+zip_check/
+submission.csv
 
 # ---- OS / editor ----
 .DS_Store

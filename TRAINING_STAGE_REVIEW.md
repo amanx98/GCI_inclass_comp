@@ -1,5 +1,11 @@
 # TRAINING STAGE REVIEW — GCI 2026 Home Credit (Nov 17, 2026)
 
+> **HISTORICAL SNAPSHOT (written Nov 17, before v4).** Final state: **v4, CV 0.76244,
+> public LB 0.76475**; the NN diversity seat was tested and rejected; the Honors notebook was
+> repaired and FE-verified on Nov 18. Current state: [`README.md`](README.md);
+> audit: [`AUDIT_FINDINGS.md`](AUDIT_FINDINGS.md). This file is kept for the stage-by-stage
+> reasoning, not as a status report.
+
 Full synthesis of every finding from both work sessions (GLM + DeepSeek), stage by stage.
 This is the "what we learned → what we changed" record for the final run.
 
@@ -12,8 +18,10 @@ This is the "what we learned → what we changed" record for the final run.
 | Tutorial-style baseline (user's NB4, buggy) | — | 0.668 (dummy RF) |
 | Anchor blend (old 3-GBM pipeline) | 0.7587 | 0.7627 |
 | v2 recipe (E2 features + full-data OOF selection) | 0.76203 | 0.7643–0.7644 |
-| **v3 recipe (re-tuned params + 2-generation ensemble)** | **0.76224** | *(pending — final upload)* |
-| Theoretical remaining lever | +0.000–0.0015 via NN diversity seat | — |
+| v3 recipe (re-tuned params + 2-generation ensemble) | 0.76224 | *(not separately uploaded)* |
+| **v4 recipe (all 4 members tuned; current)** | **0.76244** | **0.76475** |
+| NN diversity seat | MLP 0.74897 / TabNet 0.500 | ❌ rejected (both gates) |
+| Honest remaining headroom | a few 1e-4, not 1e-2 | — |
 
 ---
 
@@ -50,9 +58,12 @@ high-variance (user's "0.76502 holdout" was inflated noise; true old-pipeline OO
 - Overnight re-tune on E2 (Nov 16→17): LGB 40 trials → 0.75989→**0.76120** single-seed
   (+0.0013); XGB 26 trials → →**0.76192**. CAT re-tune skipped (params still fine, cost too high).
 - 3-seed rebuilds with new params: LGBnew3 **0.76155**, XGBnew3 **0.76171**.
-**Change:** v3 recipe uses re-tuned params; old-param XGB kept as a 4%-weight diversity member.
+- CAT was re-tuned later (Nov 17): 0.76033 → **0.76088** full-CV; adopted. HGB was
+  re-tuned at the same time: 0.75588 → **0.75820** (rebuild 0.75814).
+**Change:** v3/v4 recipes use the re-tuned params; old-param XGB kept as a 4%-weight diversity
+member in v3 only.
 **Status:** ✅ locked. Protocol documented (TPESampler seed 42, spaces in
-`Temp\opencode\overnight_retune.py`, best values in `best_params_{lgb,xgb}_e2.json`).
+`pipeline/overnight_retune.py`, best values in `pipeline/best_params_*_e2.json`).
 
 ### Stage 5 — Model roster (README checklist: "explore different models")
 **Findings (all measured, same folds):**
@@ -65,9 +76,12 @@ high-variance (user's "0.76502 holdout" was inflated noise; true old-pipeline OO
 | HGB | 0.75588 | 0.967 | ❌ 0 weight (too weak despite best corr) |
 | LogReg / RF / ExtraTrees | 0.742 / 0.736 / 0.732 | ~0.88–0.90 | ❌ dilute |
 | DART / feature-subspace LGBM | < full LGB3 | — | ❌ |
-**Seat rule (adopted from DeepSeek, verified empirically):** solo ≥0.755 AND rank-corr ≤~0.98
-with real strength; mere decorrelation without strength HURTS (HGB proof).
-**Status:** ✅ locked for GBMs; ⏳ NN candidates pending (see Stage 7).
+**Seat rule (adopted from DeepSeek, verified empirically):** solo ≥0.755 **and** judged by
+actual blend contribution. Mere decorrelation without strength HURTS (LogReg/RF proof). The
+strict “rank-corr ≤0.90” version in the early handoff was **not** applied uniformly — HGB
+(0.9756) and XGB-old (0.998) got seats, while decorrelated-but-weak models did not. See
+`AUDIT_FINDINGS.md` §M4. Blend contribution, not the correlation threshold, is the real rule.
+**Status:** ✅ locked for GBMs; the NN seat was later tested and **rejected** (see Stage 7).
 
 ### Stage 6 — Ensembling (README checklist: "explore other ensembling methods")
 **Findings (all tested on verified OOFs):**
@@ -82,14 +96,14 @@ with real strength; mere decorrelation without strength HURTS (HGB proof).
 fold-averaged per member then weighted (never one-shot retrain — the old cell-12 bug).
 **Status:** ✅ locked.
 
-### Stage 7 — Remaining lever: neural-net diversity seat (the only untested family)
+### Stage 7 — Neural-net diversity seat (tested, rejected)
 **Rationale:** all GBMs are 0.97–0.998 rank-correlated; DeepSeek's Phase-1 batch had no
 strong-enough decorrelated member. An NN with categorical embeddings uses a different
 inductive bias and could plausibly land 0.74–0.76 with low correlation.
 **Gate (adopted):** solo OOF ≥ 0.755 AND Spearman rank-corr ≤ 0.90 vs XGBnew.
-**If passed:** v4 blend rebuilt locally on verified OOFs (hill-climb + grid incl. NN seat),
-verified, THEN a submission is considered. No blind submissions.
-**Status:** ⏳ notebook `05_nn_diversity.ipynb` built for Colab T4 (~1 h).
+**Result:** MLP+embeddings OOF **0.74897**, rank-corr **0.9242** — fails both gates;
+TabNet collapsed to AUC 0.50000. No NN seat was added.
+**Status:** ✅ tested, rejected. v4 (the shipped blend) does not contain an NN member.
 
 ---
 
@@ -100,7 +114,7 @@ verified, THEN a submission is considered. No blind submissions.
 | No external data | Only `train.csv`/`test.csv` (+ provided column-description xlsx for EDA). NNs trained **from scratch** on competition data — no pretrained weights. |
 | No hand-labeling | Every prediction comes from trained models; no manual edits anywhere. |
 | Reproducibility (seeds) | Seeds 42/1337/2026 everywhere; folds seed 42; library versions recorded in notebook outputs. |
-| Honors: submit code reproducing the CSV | `gci_honors_reproduction.ipynb` regenerates the exact v3 recipe from raw CSVs (pinned weights, hardcoded tuned params); zip to be submitted. |
+| Honors: submit code reproducing the CSV | `gci_honors_reproduction.ipynb` regenerates the v4 recipe from raw CSVs (pinned weights, hardcoded tuned params) and reproduces CV within ±0.004; the shipped v4 CSV is authoritative because XGBoost is thread-sensitive. Zip the notebook + its demo `submission.csv`. |
 | Cite referenced public code | Tutorial notebook, README, Kaggle Home Credit public EDA conventions (EXT/ratio features), library docs — cited in the honors notebook header. |
 | Last submitted file counts | Final action = upload best-verified CSV last; submission log kept (3 files so far, each a validated recipe — no public-LB probing). |
 | Compute honesty | All local experiments documented; Colab runs recorded; no hidden selection. |
@@ -111,7 +125,7 @@ verified, THEN a submission is considered. No blind submissions.
 |---|---|
 | "Add more features" | 5 → 98 validated features (dead list pruned, 17 new validated) |
 | "Optimize hyperparameters" | Optuna ×2 generations (baseline set + re-tune on final set) |
-| "Explore different models" | 4 GBM families + rejected batch (LogReg/RF/ET/DART/subspace) + NN candidates pending |
+| "Explore different models" | 4 GBM families + rejected batch (LogReg/RF/ET/DART/subspace) + NN tested and rejected |
 | "Explore other ensembling methods" | Weighted-average vs rank-avg vs 2-level stacking — all measured; linear weighted average wins |
 | "Is holdout the best evaluation?" | No → full-data 5-fold OOF (+0.0028 verified) |
 | EDA-driven preprocessing | Anomaly/outlier/missing handling per tutorial, extended and validated |

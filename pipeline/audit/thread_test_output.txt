@@ -1,0 +1,15 @@
+fold0 train/val: 136961 34241
+C:\Users\amanuel\AppData\Roaming\Python\Python313\site-packages\lightgbm\sklearn.py:1106: LGBMDeprecationWarning: The argument 'eval_set' is deprecated, use 'eval_X' and 'eval_y' instead.
+  eval_set = _validate_eval_set_Xy(eval_set=eval_set, eval_X=eval_X, eval_y=eval_y)
+LGB n_jobs=2: auc=0.757658 best_iter=1612 76s
+C:\Users\amanuel\AppData\Roaming\Python\Python313\site-packages\lightgbm\sklearn.py:1106: LGBMDeprecationWarning: The argument 'eval_set' is deprecated, use 'eval_X' and 'eval_y' instead.
+  eval_set = _validate_eval_set_Xy(eval_set=eval_set, eval_X=eval_X, eval_y=eval_y)
+LGB n_jobs=-1: auc=0.757658 best_iter=1612 36s
+LGB max|diff| n_jobs 2 vs -1: 0.000e+00 corr=1.000000000
+XGB n_jobs=2: auc=0.759578 best_iter=2250 156s
+XGB n_jobs=8: auc=0.759029 best_iter=2134 75s
+XGB max|diff| n_jobs 2 vs 8: 7.087e-02 corr=0.996159451
+CAT thread_count=2: auc=0.758955 best_iter=1783 602s
+CAT thread_count=8: auc=0.759364 best_iter=1938 316s
+CAT max|diff| tc 2 vs 8: 2.042e-01 corr=0.993583842
+THREAD TEST DONE

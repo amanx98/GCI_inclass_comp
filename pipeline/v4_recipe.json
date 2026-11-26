@@ -1,0 +1,15 @@
+{
+  "recipe": {
+    "LGB": 0.3,
+    "XGBn": 0.33,
+    "CATn": 0.33,
+    "HGB": 0.04
+  },
+  "cv": 0.76244,
+  "members": {
+    "LGB": "LGBnew tuned x3 seeds (0.76155)",
+    "XGBn": "XGBnew tuned x3 seeds (0.76171)",
+    "CATn": "CAT new-tuned params x2 seeds (0.76089 avg)",
+    "HGB": "HGB tuned 1 seed (0.75814)"
+  }
+}
